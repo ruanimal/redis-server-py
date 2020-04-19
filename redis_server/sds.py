@@ -3,11 +3,11 @@
 from typing import Optional
 from array import array
 
-class Sdshdr(array):
+class Sdshdr(object):
     def __init__(self, len: int, fee: int, buf: array):
         self.len = len
         self.free = free
-        super().__init__('b', array)
+        self.buf = buf
 
 def sdsnewlen(init: bytes, initlen: int) -> Sdshdr:
     buf = array('b', init)
