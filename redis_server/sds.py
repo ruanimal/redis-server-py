@@ -96,14 +96,14 @@ def sdsMakeRoomFor(s: sds, addlen: int) -> sds:
     if free >= addlen:
         return s
 
-    len_ = sdslen(s)
-    newlen = len_ + addlen
+    lenght = sdslen(s)
+    newlen = lenght + addlen
     if newlen < SDS_MAX_PREALLOC:
         newlen *= 2
     else:
         newlen += SDS_MAX_PREALLOC
-    s.buf.extend((NUL for _ in range(newlen - len_)))  # NOTE 默认填错NUL, 和c实现有所不同
-    s.free = newlen - len_
+    s.buf.extend((NUL for _ in range(newlen - lenght)))  # NOTE 默认填错NUL, 和c实现有所不同
+    s.free = newlen - lenght
     return s
 
 def sdsRemoveFreeSpace(s: sds) -> sds:
@@ -126,13 +126,13 @@ def sdsIncrLen(s: sds, incr: int) -> None:
 
 sdsgrowzero = sdsMakeRoomFor
 
-def sdscatlen(s: sds, t: Union[cstr, sds], len_: int):
+def sdscatlen(s: sds, t: Union[cstr, sds], lenght: int):
     curlen = sdslen(s)
-    s = sdsMakeRoomFor(s, len_)
-    s[curlen:len_] = t[:len_]
-    s.len = curlen + len_
-    s.free = s.free - len_
-    s[curlen+len_] = NUL
+    s = sdsMakeRoomFor(s, lenght)
+    s[curlen:lenght] = t[:lenght]
+    s.len = curlen + lenght
+    s.free = s.free - lenght
+    s[curlen+lenght] = NUL
     return s
 
 def sdscat(s: sds, t: cstr) -> sds:
@@ -141,16 +141,16 @@ def sdscat(s: sds, t: cstr) -> sds:
 def sdscatsds(s: sds, t: sds) -> sds:
     return sdscatlen(s, t, sdslen(t))
 
-def sdscpylen(s: sds, t: cstr, len_: int) -> sds:
+def sdscpylen(s: sds, t: cstr, lenght: int) -> sds:
     totlen = s.free + s.len
-    if totlen < len_:
-        s = sdsMakeRoomFor(s, len_ - s.len)
+    if totlen < lenght:
+        s = sdsMakeRoomFor(s, lenght - s.len)
         totlen = s.free + s.len
 
-    s[:len_] = t[:len_]
-    s[len_] = NUL
-    s.len = len_
-    s.free = totlen - len_
+    s[:lenght] = t[:lenght]
+    s[lenght] = NUL
+    s.len = lenght
+    s.free = totlen - lenght
     return s
 
 def sdscpy(s: sds, t: cstr) -> sds:
