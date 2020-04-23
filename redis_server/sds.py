@@ -1,39 +1,11 @@
 # -*- coding:utf-8 -*-
 
 from typing import Union
+from .csix import *
 
-# class cstr(array):
-#     def __init__(self, init:Optional[bytes, bytearray]=b''):
-#         super().__init__('b', init.rstrip(b'\0'))
-#         self.append(b'\0')
 
-#     def length(self):
-#         return len(self) - 1
-
-cstr = Union[bytearray, bytes]
-# C语言 \0
-NUL = 0
 # SDS最大预分配长度
 SDS_MAX_PREALLOC = (1024*1024)
-
-
-def strlen(string: cstr) -> int:
-    res = 0
-    for i in string:
-        if i == NUL:
-            break
-        res += 1
-    return res
-
-
-def memcmp(s1: cstr, s2: cstr, length: int) -> int:
-    minlen = min(len(s1), len(s2), length)
-    for i in range(minlen):
-        if s1[i] > s2[i]:
-            return 1
-        elif s1[i] < s2[i]:
-            return -1
-    return 0
 
 
 class Sdshdr(object):
