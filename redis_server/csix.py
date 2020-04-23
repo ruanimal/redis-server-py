@@ -1,5 +1,6 @@
 from typing import Union
 import struct
+from copy import copy as c_assignment   # 模拟c语言赋值, 拷贝所有成员
 
 __all__ = [
     'cstr',
@@ -9,6 +10,7 @@ __all__ = [
     'memcmp',
     'cstr2unit32',
     'char_tolower',
+    'c_assignment',
 ]
 
 cstr = Union[bytearray, bytes]
