@@ -11,16 +11,27 @@ DICT_ERR = 1
 DICT_HT_INITIAL_SIZE = 4
 LONG_MAX = 0x7fffffffffffffff
 
+class dictEntryVal:
+    def __init__(self, val=None):
+        self.val = val
+
+    @property
+    def u64(self):
+        return cstr2uint64(self.val)
+
+    @property
+    def s64(self):
+        return cstr2int64(self.val)
 
 class dictEntry:
     def __init__(self):
         self.key = None
-        self.v = None
+        self.v: dictEntryVal = dictEntryVal()
         self.next: Opt[dictEntry] = None
 
 class dictType:
     def __init__(self):
-        self.hashFunction: Opt[Callable[[Any], int]] = None
+        self.hashFunction: Callable[[Any], int] = None
         self.keyDup: Opt[Callable] = None
         self.valDup: Opt[Callable] = None
         self.keyCompare: Opt[Callable] = None
@@ -36,7 +47,7 @@ class dictht:
 
 class Dict:
     def __init__(self):
-        self.type: Opt[dictType] = None
+        self.type: dictType = None
         self.privdata = None
         self.ht: List[dictht] = [dictht(), dictht()]
         self.rehashidx: int = -1
@@ -44,7 +55,7 @@ class Dict:
 
 class dictIterator:
     def __init__(self):
-        self.d: Opt[Dict] = None
+        self.d: Dict = None
         self.table: int = 0
         self.index: int = -1
         self.safe: int = 0
@@ -91,7 +102,7 @@ def dictGenHashFunction(key, length: int) -> int:
 
     idx = 0
     while length >= 4:
-        k = cstr2unit32(key[idx:idx+4])
+        k = cstr2uint32(key[idx:idx+4])
 
         k *= m
         k ^= k >> r
@@ -259,7 +270,7 @@ def dictReplace(d: Dict, key, val) -> int:
     # NOTE no dictFreeVal(&auxentry) in python
     return 0
 
-def dictReplaceRaw(d: Dict, key) -> dictEntry:
+def dictReplaceRaw(d: Dict, key) -> Opt[dictEntry]:
     entry = dictFind(d, key)
     return entry if entry else dictAddRaw(d, key)
 
@@ -358,7 +369,7 @@ def dictFind(d: Dict, key) -> Opt[dictEntry]:
     return None
 
 
-def dictFetchValue(d: Dict, key) -> None:
+def dictFetchValue(d: Dict, key):
     he = dictFind(d, key)
     return he and dictGetVal(he) or None
 
@@ -495,6 +506,52 @@ def rev(v: int) -> int:
     return int(bits[::-1], 2)
 
 
+def dictScan(d: Dict, v: int, fn: Callable, privdata) -> int:
+    if dictSize(d) == 0:
+        return 0
+    if not dictIsRehashing(d):
+        t0 = d.ht[0]
+        m0 = t0.sizemask
+        de = t0.table[v & m0]
+        while de:
+            fn(privdata, de)
+            de = de.next
+    else:
+        t0 = d.ht[0]
+        t1 = d.ht[1]
+        if t0.size > t1.size:
+            t0, t1 = t1, t0
+        m0 = t0.sizemask
+        m1 = t1.sizemask
+        while de:
+            fn(privdata, de)
+            de = de.next
+        while True:
+            de = t1.table[v & m1]
+            while de:
+                fn(privdata, de)
+                de = de.next
+            v = (((v | m0) + 1) & ~m0) | (v & m0)
+            if not (v & (m0 ^ m1)):
+                break
+    v |= ~m0
+    v = rev(v)
+    v += 1
+    v = rev(v)
+    return v
+
+
+def _dictExpandIfNeeded(d: Dict) -> int:
+    if dictIsRehashing(d):
+        return DICT_OK
+    if d.ht[0].size == 0:
+        return dictExpand(d, DICT_HT_INITIAL_SIZE)
+    if (d.ht[0].used >= d.ht[0].size and
+        (dict_can_resize or d.ht[0].used // d.ht[0].size > dict_force_resize_ratio)):
+        return dictExpand(d, d.ht[0].used * 2)
+    return DICT_OK
+
+
 def _dictNextPower(size: int) -> int:
     i = DICT_HT_INITIAL_SIZE
     if size >= LONG_MAX:
@@ -504,14 +561,52 @@ def _dictNextPower(size: int) -> int:
             return i
         i *= 2
 
-def dictHashKey():
-    pass
 
-def _dictKeyIndex() -> int:
-    pass
+def _dictKeyIndex(d: Dict, key) -> int:
+    """返回空闲的索引位置"""
 
-def dictSetKey():
-    pass
+    if _dictExpandIfNeeded(d) == DICT_ERR:
+        return -1
+    h = dictHashKey(d, key)
+    for table in range(2):
+        idx = h & d.ht[table].sizemask
+        he = d.ht[table].table[idx]
+        while he:
+            if dictCompareKeys(d, key, he.key):
+                return -1
+            he = he.next
+        if not dictIsRehashing(d):
+            break
+    return idx
+
+
+def dictEmpty(d: Dict, callback: Callable) -> None:
+    _dictClear(d, d.ht[0], callback)
+    _dictClear(d, d.ht[1], callback)
+    d.rehashidx = -1
+    d.iterators = 0
+
+
+def dictEnableResize() -> None:
+    global dict_can_resize
+    dict_can_resize = 1
+
+
+def dictDisableResize() -> None:
+    global dict_can_resize
+    dict_can_resize = 0
+
+
+def dictHashKey(d: Dict, key) -> int:
+    return d.type.hashFunction(key)
+
+
+def dictSetKey(d: Dict, entry: dictEntry, key) -> None:
+    if d.type and d.type.keyDup:
+        entry.key = d.type.keyDup(d.privdata, key)
+    else:
+        entry.key = key
+
 
 def dictSetVal(d: Dict, entry: dictEntry, val) -> None:
     if d.type and d.type.valDup:
@@ -519,14 +614,21 @@ def dictSetVal(d: Dict, entry: dictEntry, val) -> None:
     else:
         entry.v.val = val
 
-def dictGetVal():
-    pass
 
-def dictCompareKeys():
-    pass
+def dictGetVal(he: dictEntry):
+    return he.v.val
+
+
+def dictCompareKeys(d: Dict, key1, key2):
+    if d.type and d.type.keyCompare:
+        return d.type.keyCompare(d.privdata, key1, key2)
+    else:
+        return key1 == key2
+
 
 def dictSize(d: Dict) -> int:
-    pass
+    return d.ht[0].used + d.ht[1].used
+
 
 def donothing(*args, **kw) -> None:
     pass
