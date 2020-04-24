@@ -491,15 +491,8 @@ def dictGetRandomKeys(d: Dict, des: List[dictEntry], count: int) -> int:
 
 
 def rev(v: int) -> int:
-    s = 8 * 8
-    mask = UNSIGNED_LONG_MASK
-    while True:
-        s >>= 1
-        if s <= 0:
-            break
-        mask ^= (mask << s) & mask
-        v = ((v >> 5) & mask) | ((v << s) & ~mask)
-    return v
+    bits = '{:0>64b}'.format(v)
+    return int(bits[::-1], 2)
 
 
 def _dictNextPower(size: int) -> int:
