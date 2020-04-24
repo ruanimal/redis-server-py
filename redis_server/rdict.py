@@ -14,14 +14,8 @@ LONG_MAX = 0x7fffffffffffffff
 class dictEntryVal:
     def __init__(self, val=None):
         self.val = val
-
-    @property
-    def u64(self):
-        return cstr2uint64(self.val)
-
-    @property
-    def s64(self):
-        return cstr2int64(self.val)
+        self.u64: int = 0
+        self.s64: int = 0
 
 class dictEntry:
     def __init__(self):
