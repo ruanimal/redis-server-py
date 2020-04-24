@@ -42,6 +42,16 @@ class Dict:
         self.rehashidx: int = -1
         self.iterators: int = 0
 
+class dictIterator:
+    def __init__(self):
+        self.d: Opt[Dict] = None
+        self.table: int = 0
+        self.index: int = -1
+        self.safe: int = 0
+        self.entry: Opt[dictEntry] = None
+        self.nextEntry: Opt[dictEntry] = None
+        self.fingerprint: int = 0
+
 
 # 指示字典是否启用 rehash 的标识
 dict_can_resize = 1
@@ -298,6 +308,200 @@ def dictDeleteNoFree(ht: Dict, key) -> int:
     return dictGenericDelete(ht, key, 1)
 
 
+def _dictClear(d: Dict, ht: dictht, callback: Opt[Callable]) -> int:
+    i = 0
+    while i < ht.size and ht.used > 0:
+        i += 1
+        if callback and ((i & 65535) == 0):
+            callback(d.privdata)
+
+        he = ht.table[i]
+        if he is None:
+            continue
+
+        while he:
+            next_he = he.next
+            dictFreeKey(d, he)
+            dictFreeVal(d, he)
+            zfree(he)
+            ht.used -= 1
+            he = next_he
+
+    zfree(ht.table)
+    _dictReset(ht)
+    return DICT_OK
+
+
+def dictRelease(d: Dict) -> None:
+    _dictClear(d, d.ht[0], None)
+    _dictClear(d, d.ht[1], None)
+    zfree(d)
+
+
+def dictFind(d: Dict, key) -> Opt[dictEntry]:
+    if d.ht[0].size == 0:
+        return None
+
+    if dictIsRehashing(d):
+        _dictRehashStep(d)
+
+    h = dictHashKey(d, key)
+    for table in range(2):
+        idx = h & d.ht[table].sizemask
+        he = d.ht[table].table[idx]
+        while he:
+            if dictCompareKeys(d, key, he.key):
+                return he
+            he = he.next
+        if not dictIsRehashing(d):
+            return None
+    return None
+
+
+def dictFetchValue(d: Dict, key) -> None:
+    he = dictFind(d, key)
+    return he and dictGetVal(he) or None
+
+
+def dictFingerprint(d: Dict) -> int:
+    integers = [
+        id(d.ht[0].table),   # c中是table的地址
+        d.ht[0].size,
+        d.ht[0].used,
+        id(d.ht[1].table),
+        d.ht[1].size,
+        d.ht[1].used,
+    ]
+
+    hash_val = 0
+    for j in range(6):
+        hash_val += integers[j]
+        hash_val = (~hash_val) + (hash_val << 21)
+        hash_val = hash_val ^ (hash_val >> 24)
+        hash_val = (hash_val + (hash_val << 3)) + (hash_val << 8)
+        hash_val = hash_val ^ (hash_val >> 14)
+        hash_val = (hash_val + (hash_val << 2)) + (hash_val << 4)
+        hash_val = hash_val ^ (hash_val >> 28)
+        hash_val = hash_val + (hash_val << 31)
+    return hash_val
+
+
+def dictGetIterator(d: Dict) -> dictIterator:
+    it = dictIterator()
+    it.d = d
+    return it
+
+
+def dictGetSafeIterator(d: Dict) -> dictIterator:
+    it = dictGetIterator(d)
+    it.safe = 1
+    return it
+
+
+def dictNext(it: dictIterator) -> Opt[dictEntry]:
+    while 1:
+        if it.entry is None:
+            ht = it.d.ht[it.table]
+            if it.index == -1 and it.table == 0:
+                if it.safe:
+                    it.d.iterators += 1
+                else:
+                    it.fingerprint = dictFingerprint(it.d)
+
+            it.index += 1
+            if it.index > ht.size:
+                if dictIsRehashing(it.d) and it.table == 0:
+                    it.table += 1
+                    it.index = 0
+                    ht = it.d.ht[1]
+                else:
+                    break
+            it.entry = ht.table[it.index]
+        else:
+            it.entry = it.nextEntry
+        if it.entry:
+            it.nextEntry = it.entry.next
+            return it.entry
+    return None
+
+
+def dictReleaseIterator(it: dictIterator) -> None:
+    if not (it.index == -1 and it.table == 0):
+        if it.safe:
+            it.d.iterators -= 1
+        else:
+            assert it.fingerprint == dictFingerprint(it.d)
+    zfree(it)
+
+
+def dictGetRandomKey(d: Dict) -> Opt[dictEntry]:
+    if dictSize(d) == 0:
+        return None
+
+    if dictIsRehashing(d):
+        _dictRehashStep(d)
+
+    if dictIsRehashing(d):
+        while True:
+            h = c_random() % (d.ht[0].size + d.ht[1].size)
+            he = (h >= d.ht[0].size) and d.ht[1].table[h - d.ht[0].size] or d.ht[0].table[h]
+            if he:
+                break
+    else:
+        while True:
+            h = c_random() & d.ht[0].sizemask
+            he = d.ht[0].table[h]
+            if he:
+                break
+
+    listlen = 0
+    orighe = he
+    while he:
+        he = he.next
+        listlen += 1
+    listlen = c_random() % listlen
+    he = orighe
+    while listlen:
+        listlen -= 1
+        he = he.next
+    return he
+
+
+def dictGetRandomKeys(d: Dict, des: List[dictEntry], count: int) -> int:
+    stored = 0
+    if dictSize(d) < count:
+        count = dictSize(d)
+
+    while stored < count:
+        for j in range(2):
+            i = c_random() & d.ht[j].sizemask
+            size = d.ht[j].size
+            while size:
+                size -= 1
+                he = d.ht[j].table[i]
+                while he:
+                    des.append(he)
+                    he = he.next
+                    stored += 1
+                    if stored == count:
+                        return stored
+                i = (i + 1) & d.ht[j].sizemask
+            assert dictIsRehashing(d) != 0
+    return stored
+
+
+def rev(v: int) -> int:
+    s = 8 * 8
+    mask = UNSIGNED_LONG_MASK
+    while True:
+        s >>= 1
+        if s <= 0:
+            break
+        mask ^= (mask << s) & mask
+        v = ((v >> 5) & mask) | ((v << s) & ~mask)
+    return v
+
+
 def _dictNextPower(size: int) -> int:
     i = DICT_HT_INITIAL_SIZE
     if size >= LONG_MAX:
@@ -322,12 +526,14 @@ def dictSetVal(d: Dict, entry: dictEntry, val) -> None:
     else:
         entry.v.val = val
 
-def dictFind():
+def dictGetVal():
     pass
 
 def dictCompareKeys():
     pass
 
+def dictSize(d: Dict) -> int:
+    pass
 
 def donothing(*args, **kw) -> None:
     pass
@@ -340,3 +546,4 @@ if __name__ == "__main__":
     print(res)
     d = Dict()
     d.ht[0] = dictht()
+    print(rev(5))

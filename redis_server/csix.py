@@ -1,16 +1,21 @@
 from typing import Union
 import struct
 from copy import copy as c_assignment   # 模拟c语言赋值, 拷贝所有成员
+from random import randint
+
 
 __all__ = [
     'cstr',
     'NUL',
     'UNSIGNED_INT_MASK',
+    'UNSIGNED_LONG_MASK',
     'strlen',
     'memcmp',
     'cstr2unit32',
     'char_tolower',
     'c_assignment',
+    'zfree',
+    'c_random',
 ]
 
 cstr = Union[bytearray, bytes]
@@ -18,8 +23,13 @@ cstr = Union[bytearray, bytes]
 # C语言 \0
 NUL = 0
 UNSIGNED_INT_MASK = 2 ** 32 - 1
+UNSIGNED_LONG_MASK = 2 ** 64 - 1
 
 cstr2unit32 = lambda data: struct.unpack('=I', data)[0]
+c_random = lambda: randint(0, 2147483647)
+
+def zfree(ptr) -> None:
+    del ptr
 
 def strlen(string: cstr) -> int:
     res = 0
