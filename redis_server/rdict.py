@@ -39,7 +39,7 @@ class dictht:
         self.sizemask: int = 0
         self.used: int = 0
 
-class Dict:
+class rDict:
     def __init__(self):
         self.type: dictType = None
         self.privdata = None
@@ -49,7 +49,7 @@ class Dict:
 
 class dictIterator:
     def __init__(self):
-        self.d: Dict = None
+        self.d: rDict = None
         self.table: int = 0
         self.index: int = -1
         self.safe: int = 0
@@ -63,7 +63,7 @@ dict_can_resize = 1
 # 强制 rehash 的比率
 dict_force_resize_ratio = 5
 
-def dictIsRehashing(ht: Dict) -> bool:
+def dictIsRehashing(ht: rDict) -> bool:
     return ht.rehashidx != -1
 
 def dictIntHashFunction(key: int) -> int:
@@ -139,12 +139,12 @@ def _dictReset(ht: dictht):
     ht.sizemask = 0
     ht.used = 0
 
-def dictCreate(type: dictType, privDataPtr: cstr) -> Dict:
-    d = Dict()
+def dictCreate(type: dictType, privDataPtr: cstr) -> rDict:
+    d = rDict()
     _dictInit(d, type, privDataPtr)
     return d
 
-def _dictInit(d: Dict, type: dictType, privDataPtr: cstr) -> int:
+def _dictInit(d: rDict, type: dictType, privDataPtr: cstr) -> int:
     _dictReset(d.ht[0])
     _dictReset(d.ht[1])
     d.type = type
@@ -153,14 +153,14 @@ def _dictInit(d: Dict, type: dictType, privDataPtr: cstr) -> int:
     d.iterators = 0
     return DICT_OK
 
-def dictResize(d: Dict) -> int:
+def dictResize(d: rDict) -> int:
     if not dict_can_resize or dictIsRehashing(d):
         return DICT_ERR
 
     minimal = min(d.ht[0].used, DICT_HT_INITIAL_SIZE)
     return dictExpand(d, minimal)
 
-def dictExpand(d: Dict, size: int) -> int:
+def dictExpand(d: rDict, size: int) -> int:
     n = dictht()
     realsize = _dictNextPower(size)
 
@@ -182,7 +182,7 @@ def dictExpand(d: Dict, size: int) -> int:
     return DICT_OK
 
 
-def dictRehash(d: Dict, n: int) -> int:
+def dictRehash(d: rDict, n: int) -> int:
     if not dictIsRehashing(d):
         return 0
 
@@ -217,7 +217,7 @@ def timeInMilliseconds() -> int:
     return int(time.time() * 1000)
 
 
-def dictRehashMilliseconds(d: Dict, ms: int) -> int:
+def dictRehashMilliseconds(d: rDict, ms: int) -> int:
     start = timeInMilliseconds()
     rehashes = 0
     while dictRehash(d, 100):
@@ -226,11 +226,11 @@ def dictRehashMilliseconds(d: Dict, ms: int) -> int:
             break
     return rehashes
 
-def _dictRehashStep(d: Dict) -> None:
+def _dictRehashStep(d: rDict) -> None:
     if d.iterators == 0:
         dictRehash(d, 1)
 
-def dictAdd(d: Dict, key, val) -> int:
+def dictAdd(d: rDict, key, val) -> int:
     entry = dictAddRaw(d, key)
     if not entry:
         return DICT_ERR
@@ -238,7 +238,7 @@ def dictAdd(d: Dict, key, val) -> int:
     dictSetVal(d, entry, val)
     return DICT_OK
 
-def dictAddRaw(d: Dict, key) -> Opt[dictEntry]:
+def dictAddRaw(d: rDict, key) -> Opt[dictEntry]:
     if dictIsRehashing(d):
         _dictRehashStep(d)
 
@@ -254,7 +254,7 @@ def dictAddRaw(d: Dict, key) -> Opt[dictEntry]:
     dictSetKey(d, entry, key)
     return entry
 
-def dictReplace(d: Dict, key, val) -> int:
+def dictReplace(d: rDict, key, val) -> int:
     if dictAdd(d, key, val) == DICT_OK:
         return 1
 
@@ -264,11 +264,11 @@ def dictReplace(d: Dict, key, val) -> int:
     # NOTE no dictFreeVal(&auxentry) in python
     return 0
 
-def dictReplaceRaw(d: Dict, key) -> Opt[dictEntry]:
+def dictReplaceRaw(d: rDict, key) -> Opt[dictEntry]:
     entry = dictFind(d, key)
     return entry if entry else dictAddRaw(d, key)
 
-def dictGenericDelete(d: Dict, key, nofree: int) -> int:
+def dictGenericDelete(d: rDict, key, nofree: int) -> int:
     if d.ht[0].size == 0:
         return DICT_ERR
 
@@ -305,15 +305,15 @@ def dictGenericDelete(d: Dict, key, nofree: int) -> int:
     return DICT_ERR
 
 
-def dictDelete(ht: Dict, key) -> int:
+def dictDelete(ht: rDict, key) -> int:
     return dictGenericDelete(ht, key, 0)
 
 
-def dictDeleteNoFree(ht: Dict, key) -> int:
+def dictDeleteNoFree(ht: rDict, key) -> int:
     return dictGenericDelete(ht, key, 1)
 
 
-def _dictClear(d: Dict, ht: dictht, callback: Opt[Callable]) -> int:
+def _dictClear(d: rDict, ht: dictht, callback: Opt[Callable]) -> int:
     i = 0
     while i < ht.size and ht.used > 0:
         i += 1
@@ -337,13 +337,13 @@ def _dictClear(d: Dict, ht: dictht, callback: Opt[Callable]) -> int:
     return DICT_OK
 
 
-def dictRelease(d: Dict) -> None:
+def dictRelease(d: rDict) -> None:
     _dictClear(d, d.ht[0], None)
     _dictClear(d, d.ht[1], None)
     zfree(d)
 
 
-def dictFind(d: Dict, key) -> Opt[dictEntry]:
+def dictFind(d: rDict, key) -> Opt[dictEntry]:
     if d.ht[0].size == 0:
         return None
 
@@ -363,12 +363,12 @@ def dictFind(d: Dict, key) -> Opt[dictEntry]:
     return None
 
 
-def dictFetchValue(d: Dict, key):
+def dictFetchValue(d: rDict, key):
     he = dictFind(d, key)
     return he and dictGetVal(he) or None
 
 
-def dictFingerprint(d: Dict) -> int:
+def dictFingerprint(d: rDict) -> int:
     integers = [
         id(d.ht[0].table),   # c中是table的地址
         d.ht[0].size,
@@ -391,13 +391,13 @@ def dictFingerprint(d: Dict) -> int:
     return hash_val
 
 
-def dictGetIterator(d: Dict) -> dictIterator:
+def dictGetIterator(d: rDict) -> dictIterator:
     it = dictIterator()
     it.d = d
     return it
 
 
-def dictGetSafeIterator(d: Dict) -> dictIterator:
+def dictGetSafeIterator(d: rDict) -> dictIterator:
     it = dictGetIterator(d)
     it.safe = 1
     return it
@@ -439,7 +439,7 @@ def dictReleaseIterator(it: dictIterator) -> None:
     zfree(it)
 
 
-def dictGetRandomKey(d: Dict) -> Opt[dictEntry]:
+def dictGetRandomKey(d: rDict) -> Opt[dictEntry]:
     if dictSize(d) == 0:
         return None
 
@@ -472,7 +472,7 @@ def dictGetRandomKey(d: Dict) -> Opt[dictEntry]:
     return he
 
 
-def dictGetRandomKeys(d: Dict, des: List[dictEntry], count: int) -> int:
+def dictGetRandomKeys(d: rDict, des: List[dictEntry], count: int) -> int:
     stored = 0
     if dictSize(d) < count:
         count = dictSize(d)
@@ -500,7 +500,7 @@ def rev(v: int) -> int:
     return int(bits[::-1], 2)
 
 
-def dictScan(d: Dict, v: int, fn: Callable, privdata) -> int:
+def dictScan(d: rDict, v: int, fn: Callable, privdata) -> int:
     if dictSize(d) == 0:
         return 0
     if not dictIsRehashing(d):
@@ -535,7 +535,7 @@ def dictScan(d: Dict, v: int, fn: Callable, privdata) -> int:
     return v
 
 
-def _dictExpandIfNeeded(d: Dict) -> int:
+def _dictExpandIfNeeded(d: rDict) -> int:
     if dictIsRehashing(d):
         return DICT_OK
     if d.ht[0].size == 0:
@@ -556,7 +556,7 @@ def _dictNextPower(size: int) -> int:
         i *= 2
 
 
-def _dictKeyIndex(d: Dict, key) -> int:
+def _dictKeyIndex(d: rDict, key) -> int:
     """返回空闲的索引位置"""
 
     if _dictExpandIfNeeded(d) == DICT_ERR:
@@ -574,7 +574,7 @@ def _dictKeyIndex(d: Dict, key) -> int:
     return idx
 
 
-def dictEmpty(d: Dict, callback: Callable) -> None:
+def dictEmpty(d: rDict, callback: Callable) -> None:
     _dictClear(d, d.ht[0], callback)
     _dictClear(d, d.ht[1], callback)
     d.rehashidx = -1
@@ -591,18 +591,18 @@ def dictDisableResize() -> None:
     dict_can_resize = 0
 
 
-def dictHashKey(d: Dict, key) -> int:
+def dictHashKey(d: rDict, key) -> int:
     return d.type.hashFunction(key)
 
 
-def dictSetKey(d: Dict, entry: dictEntry, key) -> None:
+def dictSetKey(d: rDict, entry: dictEntry, key) -> None:
     if d.type and d.type.keyDup:
         entry.key = d.type.keyDup(d.privdata, key)
     else:
         entry.key = key
 
 
-def dictSetVal(d: Dict, entry: dictEntry, val) -> None:
+def dictSetVal(d: rDict, entry: dictEntry, val) -> None:
     if d.type and d.type.valDup:
         entry.v.val = d.type.valDup(d.privdata, val)
     else:
@@ -613,14 +613,14 @@ def dictGetVal(he: dictEntry):
     return he.v.val
 
 
-def dictCompareKeys(d: Dict, key1, key2):
+def dictCompareKeys(d: rDict, key1, key2):
     if d.type and d.type.keyCompare:
         return d.type.keyCompare(d.privdata, key1, key2)
     else:
         return key1 == key2
 
 
-def dictSize(d: Dict) -> int:
+def dictSize(d: rDict) -> int:
     return d.ht[0].used + d.ht[1].used
 
 
@@ -633,6 +633,6 @@ dictFreeVal = donothing
 if __name__ == "__main__":
     res = dictGenHashFunction(b'afafadsg g v2411rvfaer', 10)
     print(res)
-    d = Dict()
+    d = rDict()
     d.ht[0] = dictht()
     print(rev(5))
