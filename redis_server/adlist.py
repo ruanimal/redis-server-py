@@ -103,15 +103,65 @@ def listAddNodeTail(l: rList, value) -> rList:
     l.len += 1
     return l
 
+def listInsertNode(l: rList, old_node: listNode, value, after: int) -> rList:
+    node = listNode()
+    node.value = value
+    if after:
+        node.prev = old_node
+        node.next = old_node.next
+        if l.tail == old_node:
+            l.tail = node
+    else:
+        node.next = old_node
+        node.prev = old_node.prev
+        if l.head == old_node:
+            l.head = node
 
-# list *listInsertNode(list *list, listNode *old_node, void *value, int after);
-# void listDelNode(list *list, listNode *node);
-# listIter *listGetIterator(list *list, int direction);
+    if node.prev is not None:
+        node.prev.next = node
+    if node.next is not None:
+        node.next.prev = node
+    l.len += 1
+    return l
+
+def listDelNode(l: rList, node: listNode) -> None:
+    if node.prev:
+        node.prev.next = node.next
+    else:
+        l.head = node.next
+    if node.next:
+        node.next.prev = node.prev
+    else:
+        l.tail = node.prev
+    if l.free:
+        l.free(node.value)
+    zfree(node)
+    l.len -= 1
+
+def listGetIterator(l: rList, direction: int) -> listIter:
+    it = listIter()
+    if direction == AL_START_HEAD:
+        it.next = l.head
+    else:
+        it.next = l.tail
+    it.direction = direction
+    return it
+
+def listReleaseIterator(it: listIter) -> None:
+    zfree(it)
+
+def listRewind(l: rList, li: listIter) -> None:
+    li.next = l.head
+    li.direction = AL_START_HEAD
+
+def listRewindTail(l: rList, li: listIter) -> None:
+    li.next = l.tail
+    li.direction = AL_START_TAIL
+
+
 # listNode *listNext(listIter *iter);
 # void listReleaseIterator(listIter *iter);
 # list *listDup(list *orig);
 # listNode *listSearchKey(list *list, void *key);
 # listNode *listIndex(list *list, long index);
-# void listRewind(list *list, listIter *li);
-# void listRewindTail(list *list, listIter *li);
 # void listRotate(list *list);
