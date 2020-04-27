@@ -18,8 +18,8 @@ class listIter:
 
 class rList:
     def __init__(self):
-        self.head: listNode = None
-        self.tail: listNode = None
+        self.head: Opt[listNode] = None
+        self.tail: Opt[listNode] = None
         self.dup: Callable = None
         self.free: Callable = None
         self.match: Callable = None
@@ -29,17 +29,17 @@ class rList:
 def listLength(l: rList) -> int:
     return l.len
 
-def listFirst(l: rList) -> listNode:
+def listFirst(l: rList) -> Opt[listNode]:
     return l.head
 
-def listLast(l: rList) -> listNode:
+def listLast(l: rList) -> Opt[listNode]:
     return l.tail
 
-def listNodeValue(l: listNode) -> listNode:
-    return l.next
-
-def listNextNode(l: listNode):
+def listNodeValue(l: listNode):
     return l.value
+
+def listNextNode(l: listNode) -> Opt[listNode]:
+    return l.next
 
 def listSetDupMethod(l: rList, m: Callable):
     l.dup = m
@@ -60,16 +60,17 @@ def listCreate() -> rList:
     return rList()
 
 def listRelease(l: rList):
-    current = l.head
-    length = l.len
-    while length:
-        length -= 1
-        next_ = current.next
-        if l.free:
-            l.free(current.value)
-        zfree(current)
-        current = next_
-    zfree(l)
+    del rList
+    # current = l.head
+    # length = l.len
+    # while length:
+    #     length -= 1
+    #     next_ = current.next
+    #     if l.free:
+    #         l.free(current.value)
+    #     zfree(current)
+    #     current = next_
+    # zfree(l)
 
 def listAddNodeHead(l: rList, value) -> rList:
     """把value插入到rList.head之前"""
@@ -158,10 +159,83 @@ def listRewindTail(l: rList, li: listIter) -> None:
     li.next = l.tail
     li.direction = AL_START_TAIL
 
+def listNext(it: listIter) -> listNode:
+    current = it.next
+    if current:
+        if it.direction == AL_START_HEAD:
+            it.next = current.next
+        else:
+            it.next = current.prev
+    return current
 
-# listNode *listNext(listIter *iter);
-# void listReleaseIterator(listIter *iter);
-# list *listDup(list *orig);
-# listNode *listSearchKey(list *list, void *key);
-# listNode *listIndex(list *list, long index);
-# void listRotate(list *list);
+def listDup(orig: rList) -> Opt[rList]:
+    copy = listCreate()
+    copy.dup = orig.dup
+    copy.free = orig.free
+    copy.match = orig.match
+
+    it = listGetIterator(orig, AL_START_HEAD)
+    while True:
+        node = listNext(it)
+        if node is None:
+            break
+        if copy.dup:
+            value = copy.dup(node.value)
+            if value is None:
+                listRelease(copy)
+                listReleaseIterator(it)
+                return None
+        else:
+            value = node.value
+        listAddNodeTail(copy, value)
+        # NOTE 获取内存失败时判断, python 不需要
+        # if (listAddNodeTail(copy, value) == NULL) {
+        #     listRelease(copy);
+        #     listReleaseIterator(iter);
+        #     return NULL;
+        # }
+    listReleaseIterator(it)
+    return copy
+
+def listSearchKey(l: rList, key) -> Opt[listNode]:
+    it = listGetIterator(l, AL_START_HEAD)
+    while True:
+        node = listNext(it)
+        if node is None:
+            break
+        if l.match and l.match(node.value, key):
+            listReleaseIterator(it)
+            return node
+        else:
+            if key == node.value:
+                listReleaseIterator(it)
+                return node
+    listReleaseIterator(it)
+    return None
+
+def listIndex(l: rList, index: int) -> Opt[listNode]:
+    if index < 0:
+        index = (-index) - 1
+        n = l.tail
+        while n and index:
+            index -= 1
+            n = n.prev
+    else:
+        n = l.head
+        while n and index:
+            index -= 1
+            n = n.next
+    return n
+
+def listRotate(l: rList):
+    tail = l.tail
+    if listLength(l) <= 1:
+        return
+    l.tail = tail.prev
+    l.tail.next = None
+
+    l.head.prev = tail
+    tail.prev = None
+
+    tail.next = l.head
+    l.head = tail
