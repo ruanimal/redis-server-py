@@ -13,13 +13,13 @@ class listNode:
 
 class listIter:
     def __init__(self):
-        self.next: listNode = None
+        self.next: Opt[listNode] = None
         self.direction: int = 0
 
 class rList:
     def __init__(self):
-        self.head: Opt[listNode] = listNode()
-        self.tail: Opt[listNode] = listNode()
+        self.head: Opt[listNode] = None
+        self.tail: Opt[listNode] = None
         self.dup: Callable = None
         self.free: Callable = None
         self.match: Callable = None
@@ -81,6 +81,7 @@ def listAddNodeHead(l: rList, value) -> rList:
         l.head = l.tail = node
         node.prev = node.next = None
     else:
+        assert l.head
         node.prev = None
         node.next = l.head
         l.head.prev = node
@@ -97,6 +98,7 @@ def listAddNodeTail(l: rList, value) -> rList:
         l.head = l.tail = node
         node.prev = node.next = None
     else:
+        assert l.tail
         node.prev = l.tail
         node.next = None
         l.tail.next = node
@@ -159,7 +161,7 @@ def listRewindTail(l: rList, li: listIter) -> None:
     li.next = l.tail
     li.direction = AL_START_TAIL
 
-def listNext(it: listIter) -> listNode:
+def listNext(it: listIter) -> Opt[listNode]:
     current = it.next
     if current:
         if it.direction == AL_START_HEAD:
@@ -229,11 +231,16 @@ def listIndex(l: rList, index: int) -> Opt[listNode]:
 
 def listRotate(l: rList):
     tail = l.tail
+
+    assert tail
     if listLength(l) <= 1:
         return
+
     l.tail = tail.prev
+    assert l.tail
     l.tail.next = None
 
+    assert l.head
     l.head.prev = tail
     tail.prev = None
 
