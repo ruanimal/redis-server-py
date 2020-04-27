@@ -18,8 +18,8 @@ class listIter:
 
 class rList:
     def __init__(self):
-        self.head: Opt[listNode] = None
-        self.tail: Opt[listNode] = None
+        self.head: Opt[listNode] = listNode()
+        self.tail: Opt[listNode] = listNode()
         self.dup: Callable = None
         self.free: Callable = None
         self.match: Callable = None
