@@ -6,8 +6,8 @@ from .csix import *
 
 class listNode:
     def __init__(self):
-        self.prev: Opt[ListNode] = None
-        self.next: Opt[ListNode] = None
+        self.prev: Opt['ListNode'] = None
+        self.next: Opt['ListNode'] = None
         self.value = None
 
 
