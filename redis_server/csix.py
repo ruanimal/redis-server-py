@@ -7,8 +7,8 @@ from random import randint
 __all__ = [
     'cstr',
     'NUL',
-    'UNSIGNED_INT_MASK',
-    'UNSIGNED_LONG_MASK',
+    'UINT_MASK',
+    'ULONG_MASK',
     'strlen',
     'memcmp',
     'cstr2uint32',
@@ -24,8 +24,8 @@ cstr = Union[bytearray, bytes]
 
 # C语言 \0
 NUL = 0
-UNSIGNED_INT_MASK = 2 ** 32 - 1
-UNSIGNED_LONG_MASK = 2 ** 64 - 1
+UINT_MASK = 2 ** 32 - 1
+ULONG_MASK = 2 ** 64 - 1
 
 cstr2uint32 = lambda data: struct.unpack('=I', data)[0]
 cstr2uint64 = lambda data: struct.unpack('=Q', data)[0]

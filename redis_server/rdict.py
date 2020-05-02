@@ -4,6 +4,7 @@ import time
 import struct
 from typing import Any, Union, Callable, Optional as Opt, List
 from .csix import *
+from fixedint import MutableUInt32, MutableInt64   # type: ignore # pylint: disable=no-name-in-module
 
 
 DICT_OK = 0
@@ -67,14 +68,15 @@ def dictIsRehashing(ht: rDict) -> bool:
     return ht.rehashidx != -1
 
 def dictIntHashFunction(key: int) -> int:
-    assert key < 2 ** 32
-    key += ~(key << 15)
-    key ^=  (key >> 10)
-    key +=  (key << 3)
-    key ^=  (key >> 6)
-    key += ~(key << 11)
-    key ^=  (key >> 16)
-    return key
+    assert key <= UINT_MASK
+    newkey = MutableUInt32(key)
+    newkey += ~(newkey << 15)
+    newkey ^=  (newkey >> 10)
+    newkey +=  (newkey << 3)
+    newkey ^=  (newkey >> 6)
+    newkey += ~(newkey << 11)
+    newkey ^=  (newkey >> 16)
+    return int(newkey)
 
 def dictIdentityHashFunction(key: int) -> int:
     return key
@@ -92,11 +94,12 @@ def dictGenHashFunction(key, length: int) -> int:
 
     m = 0x5bd1e995
     r = 24
-    h = seed ^ length
+    h = MutableUInt32(seed ^ length)
 
     idx = 0
     while length >= 4:
         k = cstr2uint32(key[idx:idx+4])
+        k = MutableUInt32(k)
 
         k *= m
         k ^= k >> r
@@ -110,11 +113,11 @@ def dictGenHashFunction(key, length: int) -> int:
 
     if length == 3:
         h ^= key[idx+2] << 16
-        h ^= key[idx+2] << 8
+        h ^= key[idx+1] << 8
         h ^= key[idx]
         h *= m
     elif length == 2:
-        h ^= key[idx+2] << 8
+        h ^= key[idx+1] << 8
         h ^= key[idx]
         h *= m
     elif length == 1:
@@ -123,15 +126,16 @@ def dictGenHashFunction(key, length: int) -> int:
     h ^= h >> 13
     h *= m
     h ^= h >> 15
-    return h & UNSIGNED_INT_MASK
+    return int(h)
 
-def dictGenCaseHashFunction(buf: cstr, length: int):
-    hash_ = dict_hash_function_seed & UNSIGNED_INT_MASK
+def dictGenCaseHashFunction(buf: cstr, length: int) -> int:
+    hash_ = MutableUInt32(dict_hash_function_seed)
     idx = 0
     while length:
         hash_ = ((hash_ << 5) + hash_) + (char_tolower(buf[idx]))
         idx += 0
         length -= 1
+    return int(hash_)
 
 def _dictReset(ht: dictht):
     ht.table = []
@@ -378,7 +382,7 @@ def dictFingerprint(d: rDict) -> int:
         d.ht[1].used,
     ]
 
-    hash_val = 0
+    hash_val = MutableInt64(0)
     for j in range(6):
         hash_val += integers[j]
         hash_val = (~hash_val) + (hash_val << 21)
@@ -388,7 +392,7 @@ def dictFingerprint(d: rDict) -> int:
         hash_val = (hash_val + (hash_val << 2)) + (hash_val << 4)
         hash_val = hash_val ^ (hash_val >> 28)
         hash_val = hash_val + (hash_val << 31)
-    return hash_val
+    return int(hash_val)
 
 
 def dictGetIterator(d: rDict) -> dictIterator:
@@ -501,6 +505,7 @@ def rev(v: int) -> int:
 
 
 def dictScan(d: rDict, v: int, fn: Callable, privdata) -> int:
+    v = MutableUInt32(v)
     if dictSize(d) == 0:
         return 0
     if not dictIsRehashing(d):
@@ -532,7 +537,7 @@ def dictScan(d: rDict, v: int, fn: Callable, privdata) -> int:
     v = rev(v)
     v += 1
     v = rev(v)
-    return v
+    return int(v)
 
 
 def _dictExpandIfNeeded(d: rDict) -> int:
