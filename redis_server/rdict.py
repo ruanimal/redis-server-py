@@ -18,11 +18,17 @@ class dictEntryVal:
         self.u64: int = 0
         self.s64: int = 0
 
+    def __repr__(self):
+        return 'Val(%r, %r, %r)' % (self.val, self.u64, self.s64)
+
 class dictEntry:
     def __init__(self):
         self.key = None
         self.v: dictEntryVal = dictEntryVal()
         self.next: Opt[dictEntry] = None
+
+    def __repr__(self):
+        return 'dictEntry(%r: %r) -> %r' % (self.key, self.v, self.next)
 
 class dictType:
     def __init__(self):
@@ -39,6 +45,12 @@ class dictht:
         self.size: int = 0
         self.sizemask: int = 0
         self.used: int = 0
+
+    def __repr__(self):
+        return 'dictht => size: %r, used: %r, sizemask: %r, table: %r' % (
+            self.size, self.used, self.sizemask, self.table,
+        )
+
 
 class rDict:
     def __init__(self):
@@ -133,7 +145,7 @@ def dictGenCaseHashFunction(buf: cstr, length: int) -> int:
     idx = 0
     while length:
         hash_ = ((hash_ << 5) + hash_) + (char_tolower(buf[idx]))
-        idx += 0
+        idx += 1
         length -= 1
     return int(hash_)
 
@@ -178,7 +190,7 @@ def dictExpand(d: rDict, size: int) -> int:
     n.table = [None for _ in range(realsize)]
     n.used = 0
 
-    if d.ht[0].table is None:
+    if not d.ht[0].table:
         d.ht[0] = n
         return DICT_OK
     d.ht[1] = n
