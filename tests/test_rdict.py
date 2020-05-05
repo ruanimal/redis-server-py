@@ -3,7 +3,7 @@ from redis_server.rdict import _dictNextPower, _dictExpandIfNeeded
 
 def dict2rDict(d: dict) -> rDict:
     t = dictType()
-    t.hashFunction = id
+    t.hashFunction = lambda i: int(i)
     rd = dictCreate(t, b'')
     for k, v in d.items():
         dictAdd(rd, k, v)
@@ -50,3 +50,10 @@ def test_dictAddRaw():
 
     entry = dictAddRaw(d, b'1234')
     assert d.ht[0].table[t.hashFunction(b'1234') & 2] is entry
+
+def test_dictAdd():
+    d = dict2rDict({})
+    dictAdd(d, b'12', 1)
+    entry = d.ht[0].table[0]
+    assert entry.key == b'12'
+    assert entry.v.val == 1
