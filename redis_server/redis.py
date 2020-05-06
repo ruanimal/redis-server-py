@@ -34,7 +34,7 @@ def zslCreate() -> zskiplist:
     zsl.header = zslCreateNode(ZSKIPLIST_MAXLEVEL, 0, None)
     return zsl
 
-def zslCreateNode(level: int, score: float, obj) -> zskiplistNode:
+def zslCreateNode(level: int, score: float, obj: robj) -> zskiplistNode:
     zn = zskiplistNode()
     zn.level = [zskiplistLevel() for _ in range(level)]
     zn.score = score
