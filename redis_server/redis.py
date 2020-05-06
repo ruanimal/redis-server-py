@@ -1,20 +1,12 @@
 # -*- coding:utf-8 -*-
 
+from math import isnan
 from typing import Any, Union, Callable, Optional as Opt, List
-from .robject import decrRefCount
+from .robject import decrRefCount, robj, compareStringObjects
 from .csix import *
 
-REDIS_LRU_BITS = 24
 ZSKIPLIST_MAXLEVEL = 32
 ZSKIPLIST_P = 0.25
-
-class redisObject:
-    def __init__(self):
-        self.type: int = 0
-        self.encoding: int = 0
-        self.lru: int = REDIS_LRU_BITS
-        self.refcount: int = 0
-        self.ptr = None
 
 class zskiplistLevel:
     def __init__(self):
@@ -23,7 +15,7 @@ class zskiplistLevel:
 
 class zskiplistNode:
     def __init__(self):
-        self.obj: Opt[redisObject] = None
+        self.obj: Opt[robj] = None
         self.score: float = 0
         self.backward: Opt[zskiplistNode] = None
         self.level: List[zskiplistLevel] = []
@@ -61,6 +53,55 @@ def zslFree(zsl: zskiplist) -> None:
         zslFreeNode(node)
         node = next_
     zfree(zsl)
+
+def zslInsert(zsl: zskiplist, score: float, obj: robj) -> zskiplistNode:
+    assert not isnan(score)
+
+    update = [None for _ in range(ZSKIPLIST_MAXLEVEL)]
+    rank = [0 for _ in range(ZSKIPLIST_MAXLEVEL)]
+    x = zsl.header
+    for i in range(zsl.length-1, -1, -1):
+        rank[i] = 0 if i == zsl.level-1 else rank[i+1]
+        while x.level[i].forward and (
+            x.level[i].forward.score < score or (
+                x.level[i].forward.score == score and
+                compareStringObjects(x.level[i].forward.obj, obj) < 0)):
+            rank[i] += x.level[i].span
+            x = x.level[i].forward
+        update[i] = x
+
+    level = zslRandomLevel()
+    if level > zsl.level:
+        for i in range(zsl.length, level, -1):
+            rank[i] = 0
+            update[i] = zsl.header
+            update[i].level[i].span = zsl.length
+        zsl.level = level
+    x = zslCreateNode(level, score, obj)
+
+    for i in range(level):
+        x.level[i].forward = update[i].level[i].forward
+        update[i].level[i].forward = x
+        x.level[i].span = update[i].level[i].span - (rank[0] - rank[i])
+        update[i].level[i].span = (rank[0] - rank[i]) + 1
+
+    for i in range(level, zsl.level):
+        update[i].level[i].span += 1
+
+    x.backward = None if update[0] == zsl.header else update[0]
+    if x.level[0].forward:
+        x.level[0].forward.backward = x
+    else:
+        zsl.tail = x
+
+    zsl.length += 1
+    return x
+
+def zslRandomLevel() -> int:
+    level = 1
+    while (c_random() & 0xFFFF) < (ZSKIPLIST_P * 0xFFFF):
+        level += 1
+    return level if level < ZSKIPLIST_MAXLEVEL else ZSKIPLIST_MAXLEVEL
 
 # unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
 # int zslDelete(zskiplist *zsl, double score, robj *obj);
