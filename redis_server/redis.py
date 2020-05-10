@@ -27,6 +27,14 @@ class zskiplist:
         self.length: int = 0
         self.level: int = 0
 
+class zrangespec:
+    def __init__(self):
+        self.min: float = 0
+        self.max: float = 0
+        self.minex: int = 0
+        self.maxex: int = 0
+
+
 def zslCreate() -> zskiplist:
     zsl = zskiplist()
     zsl.level = 1
@@ -177,6 +185,26 @@ def zslRandomLevel() -> int:
     while (c_random() & 0xFFFF) < (ZSKIPLIST_P * 0xFFFF):
         level += 1
     return level if level < ZSKIPLIST_MAXLEVEL else ZSKIPLIST_MAXLEVEL
+
+def zslValueGteMin(value: float, spec: zrangespec) -> int:
+    return spec.minex and (value > spec.min) or (value >= spec.min)
+
+def zslValueLteMax(value: float, spec: zrangespec) -> int:
+    return spec.maxex and (value > spec.max) or (value >= spec.max)
+
+def zslIsInRange(zsl: zskiplist, zrange: zrangespec) -> int:
+    if zrange.min > zrange.max or (
+        zrange.min == zrange.max and (
+            zrange.minex or zrange.maxex)):
+        return 0
+
+    x = zsl.tail
+    if x == None or (not zslValueGteMin(x.score, zrange)):
+        return 0
+    x = zsl.header.level[0].forward
+    if x == None or (not zslValueLteMax(x.score, zrange)):
+        return 0
+    return 1
 
 # unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
 # int zslDelete(zskiplist *zsl, double score, robj *obj);
