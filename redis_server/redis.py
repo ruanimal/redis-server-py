@@ -2,7 +2,7 @@
 
 from math import isnan
 from typing import Any, Union, Callable, Optional as Opt, List
-from .robject import decrRefCount, robj, compareStringObjects
+from .robject import decrRefCount, robj, compareStringObjects, equalStringObjects
 from .csix import *
 
 ZSKIPLIST_MAXLEVEL = 32
@@ -55,15 +55,15 @@ def zslFree(zsl: zskiplist) -> None:
         node = next_
     zfree(zsl)
 
-def zslInsert(zsl: zskiplist, score: float, obj: robj) -> zskiplistNode:
-    def node_lt(node: zskiplistNode, score: float, obj: robj):
-        if x.level[i].forward.score < score:
-            return True
-        if (x.level[i].forward.score == score and
-            compareStringObjects(x.level[i].forward.obj, obj) < 0):
-            return True
-        return False
+def _node_lt(node: zskiplistNode, score: float, obj: robj):
+    if node.score < score:
+        return True
+    if (node.score == score and
+        compareStringObjects(node.obj, obj) < 0):
+        return True
+    return False
 
+def zslInsert(zsl: zskiplist, score: float, obj: robj) -> zskiplistNode:
     assert not isnan(score)
     update: List[Opt[zskiplistNode]] = [None for _ in range(ZSKIPLIST_MAXLEVEL)]
     # rank[i]: 到第i层为止经过的所有node的span总和
@@ -72,7 +72,7 @@ def zslInsert(zsl: zskiplist, score: float, obj: robj) -> zskiplistNode:
     # 从高层开始遍历
     for i in range(zsl.level-1, -1, -1):
         rank[i] = 0 if i == zsl.level-1 else rank[i+1]
-        while x.level[i].forward and node_lt(x.level[i].forward, score, obj):
+        while x.level[i].forward and _node_lt(x.level[i].forward, score, obj):
             rank[i] += x.level[i].span
             x = x.level[i].forward
         # 每一层, 小于新Node的最大Node, 新节点会插入到update[i].level[i]之后
@@ -106,6 +106,46 @@ def zslInsert(zsl: zskiplist, score: float, obj: robj) -> zskiplistNode:
 
     zsl.length += 1
     return x
+
+
+def zslDeleteNode(zsl: zskiplist, x: zskiplistNode, update: List[Opt[zskiplistNode]]) -> None:
+    for i in range(zsl.level):
+        if update[i].level[i].forward == x:  # type: ignore
+            update[i].level[i].span += x.level[i].span - 1  # type: ignore
+            update[i].level[i].forward = x.level[i].forward  # type: ignore
+        else:
+            update[i].level[i].span -= 1  # type: ignore
+
+    if x.level[0].forward:  # 不是最后一个节点
+        x.level[0].forward.backward = x.backward
+    else:
+        zsl.tail = x.backward  # type: ignore
+
+    # 如果被删除的节点level最大, 则头节点的倒数第二level的forward就会是None
+    while zsl.level > 1 and zsl.header.level[zsl.level-1].forward == None:
+        zsl.level -= 1
+    zsl.length -= 1
+
+
+def zslDelete(zsl: zskiplist, score: float, obj: robj) -> int:
+    update: List[Opt[zskiplistNode]] = [None for _ in range(ZSKIPLIST_MAXLEVEL)]
+    x = zsl.header
+    # 从高层开始遍历
+    for i in range(zsl.level-1, -1, -1):
+        while x.level[i].forward and _node_lt(x.level[i].forward, score, obj):
+            x = x.level[i].forward
+        # 每一层, 小于新Node的最大Node, 新节点会插入到update[i].level[i]之后
+        update[i] = x
+
+    # 此时的x是待删除节点的前一个节点
+    x = x.level[0].forward
+    if x and score == x.score and equalStringObjects(x.obj, obj):
+        zslDeleteNode(zsl, x, update)
+        zslFreeNode(x)
+        return 1
+    else:
+        return 0
+    return 0
 
 def zslRandomLevel() -> int:
     level = 1

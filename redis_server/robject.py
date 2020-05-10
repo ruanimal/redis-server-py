@@ -72,12 +72,19 @@ def compareStringObjectsWithFlags(a: 'robj', b: 'robj', flags: int) -> int:
     else:
         minlen = min(alen, blen)
         cmp = memcmp(astr, bstr, minlen)
-        if cmp==0:
+        if cmp == 0:
             return alen - blen
         return cmp
 
 def compareStringObjects(a: robj, b: robj) -> int:
     return compareStringObjectsWithFlags(a, b, REDIS_COMPARE_BINARY)
+
+def equalStringObjects(a: robj, b: robj) -> bool:
+    if (a.encoding == REDIS_ENCODING_INT and
+        b.encoding == REDIS_ENCODING_INT):
+        return a.ptr == b.ptr
+    else:
+        return compareStringObjects(a, b) == 0
 
 def sdsEncodedObject(obj: robj) -> int:
     return (obj.encoding == REDIS_ENCODING_RAW or \
