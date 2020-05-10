@@ -4,6 +4,7 @@ from math import isnan
 from typing import Any, Union, Callable, Optional as Opt, List
 from .robject import decrRefCount, robj, compareStringObjects, equalStringObjects
 from .csix import *
+from .rdict import rDict, dictDelete
 
 ZSKIPLIST_MAXLEVEL = 32
 ZSKIPLIST_P = 0.25
@@ -234,6 +235,28 @@ def zslLastInRange(zsl: zskiplist, zrange: zrangespec) -> Opt[zskiplistNode]:
     if not zslValueGteMin(x.score, zrange):
         return None
     return x
+
+def zslDeleteRangeByScore(zsl: zskiplist, zrange: zrangespec, d: rDict) -> int:
+    def cond(n: zskiplistNode, r: zrangespec):
+        return n and (r.minex and (n.score <= r.min) or (n.score < r.min))
+
+    removed = 0
+    update: List[Opt[zskiplistNode]] = [None for _ in range(ZSKIPLIST_MAXLEVEL)]
+
+    x = zsl.header
+    for i in range(zsl.level-1, -1, -1):
+        while cond(x.level[i].forward, zrange):
+            x = x.level[i].forward
+        update[i] = x
+
+    x = x.level[0].forward
+    while x and (zrange.maxex and x.score < zrange.max or x.score <= zrange.max):
+        tmp = x.level[0].forward
+        zslDeleteNode(zsl, x, update)
+        dictDelete(d, x.obj)
+        removed += 1
+        x = tmp
+    return removed
 
 # unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
 # int zslDelete(zskiplist *zsl, double score, robj *obj);
