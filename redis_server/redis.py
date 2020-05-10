@@ -206,6 +206,21 @@ def zslIsInRange(zsl: zskiplist, zrange: zrangespec) -> int:
         return 0
     return 1
 
+def zslFirstInRange(zsl: zskiplist, zrange: zrangespec) -> Opt[zskiplistNode]:
+    if not zslIsInRange(zsl, zrange):
+        return None
+    x = zsl.header
+    for i in range(zsl.level-1, -1, -1):
+        while (x.level[i].forward and
+            not zslValueGteMin(x.level[i].forward.score, zrange)):
+            x = x.level[i].forward
+    x = x.level[0].forward
+    assert x != None
+
+    if not zslValueLteMax(x.score, zrange):
+        return None
+    return x
+
 # unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
 # int zslDelete(zskiplist *zsl, double score, robj *obj);
 # zskiplistNode *zslFirstInRange(zskiplist *zsl, zrangespec *range);
