@@ -258,6 +258,30 @@ def zslDeleteRangeByScore(zsl: zskiplist, zrange: zrangespec, d: rDict) -> int:
         x = tmp
     return removed
 
+def zslDeleteRangeByRank(zsl: zskiplist, start: int, end: int, d: rDict) -> int:
+    removed = 0
+    traversed = 0
+    update: List[Opt[zskiplistNode]] = [None for _ in range(ZSKIPLIST_MAXLEVEL)]
+
+    x = zsl.header
+    for i in range(zsl.level-1, -1, -1):
+        while (x.level[i].forward and (traversed + x.level[i].span < start)):
+            traversed += x.level[i].span
+            x = x.level[i].forward
+        update[i] = x
+
+    traversed += 1
+    x = x.level[0].forward
+    while (x and traversed <= end):
+        tmp = x.level[0].forward
+        zslDeleteNode(zsl, x, update)
+        dictDelete(d, x.obj)
+        zslFreeNode(x)
+        removed += 1
+        traversed += 1
+        x = tmp
+    return removed
+
 # unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
 # int zslDelete(zskiplist *zsl, double score, robj *obj);
 # zskiplistNode *zslFirstInRange(zskiplist *zsl, zrangespec *range);
