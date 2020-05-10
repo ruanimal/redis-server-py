@@ -281,14 +281,3 @@ def zslDeleteRangeByRank(zsl: zskiplist, start: int, end: int, d: rDict) -> int:
         traversed += 1
         x = tmp
     return removed
-
-# unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score);
-# int zslDelete(zskiplist *zsl, double score, robj *obj);
-# zskiplistNode *zslFirstInRange(zskiplist *zsl, zrangespec *range);
-# zskiplistNode *zslLastInRange(zskiplist *zsl, zrangespec *range);
-# double zzlGetScore(unsigned char *sptr);
-# void zzlNext(unsigned char *zl, unsigned char **eptr, unsigned char **sptr);
-# void zzlPrev(unsigned char *zl, unsigned char **eptr, unsigned char **sptr);
-# unsigned int zsetLength(robj *zobj);
-# void zsetConvert(robj *zobj, int encoding);
-# unsigned long zslGetRank(zskiplist *zsl, double score, robj *o);
