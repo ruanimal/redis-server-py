@@ -160,6 +160,18 @@ def zslGetRank(zsl: zskiplist, score: float, obj: robj) -> int:
     return 0
 
 
+def zslGetElementByRank(zsl: zskiplist, rank: int) -> Opt[zskiplistNode]:
+    traversed = 0
+    x = zsl.header
+    for i in range(zsl.level-1, -1, -1):
+        while x.level[i].forward and traversed + x.level[i].span <= rank:
+            traversed += x.level[i].span
+            x = x.level[i].forward
+        if traversed == rank:
+            return x
+    return None
+
+
 def zslRandomLevel() -> int:
     level = 1
     while (c_random() & 0xFFFF) < (ZSKIPLIST_P * 0xFFFF):
