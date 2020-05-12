@@ -1,3 +1,7 @@
+"""
+用于大小端转换
+"""
+
 import sys
 from .csix import int2cstr, cstr2int
 
