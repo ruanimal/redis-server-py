@@ -10,6 +10,12 @@ __all__ = [
     'NUL',
     'UINT_MASK',
     'ULONG_MASK',
+    'INT64_MAX',
+    'INT64_MIN',
+    'INT32_MAX',
+    'INT32_MIN',
+    'INT16_MAX',
+    'INT16_MIN',
     'strlen',
     'memcmp',
     'memcpy',
@@ -22,6 +28,8 @@ __all__ = [
     'c_random',
     'ptr2long',
     'strcoll',
+    'int2cstr',
+    'cstr2int',
 ]
 
 cstr = Union[bytearray, bytes]
@@ -30,11 +38,34 @@ cstr = Union[bytearray, bytes]
 NUL = 0
 UINT_MASK = 2 ** 32 - 1
 ULONG_MASK = 2 ** 64 - 1
+INT64_MAX = 2 ** 63 - 1
+INT64_MIN = -INT64_MAX - 1
+INT32_MAX = 2 ** 31 - 1
+INT32_MIN = -INT32_MAX - 1
+INT16_MAX = 2 ** 16 - 1
+INT16_MIN = -INT16_MAX - 1
 
 cstr2uint32 = lambda data: struct.unpack('=I', data)[0]
 cstr2uint64 = lambda data: struct.unpack('=Q', data)[0]
 cstr2int64 = lambda data: struct.unpack('=q', data)[0]
 c_random = lambda: randint(0, 2147483647)
+
+pack_type_map = {
+    'int8': 'b',
+    'int16': 'h',
+    'int32': 'i',
+    'int64': 'q',
+    'uint8': 'B',
+    'uint16': 'H',
+    'uint32': 'I',
+    'uint64': 'Q',
+}
+
+def int2cstr(v: int, int_type: str) -> bytes:
+    return struct.pack('=' + pack_type_map[int_type], v)
+
+def cstr2int(buf: cstr, int_type: str) -> int:
+    return struct.unpack('=' + pack_type_map[int_type], buf)[0]
 
 def zfree(ptr) -> None:
     del ptr
@@ -46,7 +77,6 @@ def strlen(string: cstr) -> int:
             break
         res += 1
     return res
-
 
 def memcmp(s1: cstr, s2: cstr, length: int) -> int:
     minlen = min(len(s1), len(s2), length)
