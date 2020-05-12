@@ -94,3 +94,22 @@ def intsetSearch(s: intset, value: int, pos: intptr) -> int:
         pos.value = minimal
         return 0
 
+
+def intsetUpgradeAndAdd(s: intset, value: int) -> intset:
+    curenc = intrev32ifbe(s.encoding)
+    newenc = _intsetValueEncoding(value)
+    length = intrev32ifbe(s.length)
+
+    prepend = value < 0 and 1 or 0
+    s.encoding = intrev32ifbe(newenc)
+
+    while length:
+        length -= 1
+        _intsetSet(s, length+prepend, _intsetGetEncoded(s, length, curenc))
+
+    if prepend:
+        _intsetGet(s, 0, value)
+    else:
+        _intsetSet(s, intrev32ifbe(s.length), value)
+    s.length = intrev32ifbe(intrev32ifbe(s.length)+1)
+    return s
