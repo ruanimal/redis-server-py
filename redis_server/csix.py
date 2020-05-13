@@ -19,6 +19,7 @@ __all__ = [
     'strlen',
     'memcmp',
     'memcpy',
+    'memmove',
     'cstr2uint32',
     'cstr2int64',
     'cstr2uint64',
@@ -89,6 +90,9 @@ def memcmp(s1: cstr, s2: cstr, length: int) -> int:
 
 def memcpy(dest: bytearray, src: cstr, length: int) -> None:
     dest[:length] = src[:length]
+
+def memmove(buf: bytearray, dest_pos: int, src_pos: int, length: int) -> None:
+    buf[dest_pos:dest_pos+length] = buf[src_pos:src_pos+length]
 
 def char_tolower(char: int):
     tmp = bytearray()

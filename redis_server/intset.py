@@ -113,3 +113,40 @@ def intsetUpgradeAndAdd(s: intset, value: int) -> intset:
         _intsetSet(s, intrev32ifbe(s.length), value)
     s.length = intrev32ifbe(intrev32ifbe(s.length)+1)
     return s
+
+
+def intsetMoveTail(s: intset, from_: int, to: int) -> None:
+    bytes_count = intrev32ifbe(s.length) - from_
+    encoding = intrev32ifbe(s.encoding)
+    assert encoding in INTSET_ENCS
+
+    src = from_
+    dst = to
+    if encoding == INTSET_ENC_INT64:
+        bytes_count *= 8
+    elif encoding == INTSET_ENC_INT32:
+        bytes_count *= 4
+    else:
+        bytes_count *= 2
+    memmove(s.contents, dst, src, bytes_count)
+
+
+def intsetAdd(s: intset, value: int, success: intptr) -> intset:
+    valenc = _intsetValueEncoding(value)
+    ptr_pos = intptr()
+    ptr_pos.value = 0
+    success.value = 1
+    if valenc > intrev32ifbe(s.encoding):
+        return intsetUpgradeAndAdd(s, value)
+    else:
+        if intsetSearch(s, value, ptr_pos):
+            success.value = 0
+            return s
+
+        s = intsetResize(s, intrev32ifbe(s.length)+1)
+        if ptr_pos.value < intrev32ifbe(s.length):
+            intsetMoveTail(s, ptr_pos.value, ptr_pos.value+1)
+
+    _intsetSet(s, ptr_pos.value, value)
+    s.length = intrev32ifbe(intrev32ifbe(s.length)+1)
+    return s
