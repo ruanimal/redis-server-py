@@ -60,21 +60,24 @@ def intsetResize(s: intset, length: int) -> intset:
     s.contents.extend(NUL for _ in range(size-len(s.contents)))
     return s
 
-def intsetSearch(s: intset, value: int, pos: intptr) -> int:
+def intsetSearch(s: intset, value: int, pos: Opt[intptr]) -> int:
     minimal = 0
     maximum = intrev32ifbe(s.length)-1
     mid = -1
     cur = -1
 
     if (intrev32ifbe(s.length) == 0):
-        pos.value = 0
+        if pos:
+            pos.value = 0
         return 0
     else:
         if value > _intsetGet(s, intrev32ifbe(s.length)-1):
-            pos.value = intrev32ifbe(s.length)
+            if pos:
+                pos.value = intrev32ifbe(s.length)
             return 0
         elif value < _intsetGet(s, 0):
-            pos.value = 0
+            if pos:
+                pos.value = 0
             return 0
 
     while maximum >= minimal:
@@ -88,10 +91,12 @@ def intsetSearch(s: intset, value: int, pos: intptr) -> int:
             break
 
     if value == cur:
-        pos.value = mid
+        if pos:
+            pos.value = mid
         return 1
     else:
-        pos.value = minimal
+        if pos:
+            pos.value = minimal
         return 0
 
 
@@ -108,7 +113,7 @@ def intsetUpgradeAndAdd(s: intset, value: int) -> intset:
         _intsetSet(s, length+prepend, _intsetGetEncoded(s, length, curenc))
 
     if prepend:
-        _intsetGet(s, 0, value)
+        _intsetSet(s, 0, value)
     else:
         _intsetSet(s, intrev32ifbe(s.length), value)
     s.length = intrev32ifbe(intrev32ifbe(s.length)+1)
@@ -150,3 +155,45 @@ def intsetAdd(s: intset, value: int, success: intptr) -> intset:
     _intsetSet(s, ptr_pos.value, value)
     s.length = intrev32ifbe(intrev32ifbe(s.length)+1)
     return s
+
+
+def intsetRemove(s: intset, value: int, success: intptr) -> intset:
+    valenc = _intsetValueEncoding(value)
+    success.value = 0
+    pos = intptr()
+    pos.value = 0
+
+    if valenc <= intrev32ifbe(s.encoding) and intsetSearch(s, value, pos):
+        length = intrev32ifbe(s.length)
+        success.value = 1
+        if pos.value < length - 1:
+            intsetMoveTail(s, pos.value+1, pos.value)
+        s = intsetResize(s, length-1)
+        s.length = intrev32ifbe(length-1)
+    return s
+
+
+def intsetFind(s: intset, value: int) -> int:
+    valenc = _intsetValueEncoding(value)
+    return valenc <= intrev32ifbe(s.encoding) and intsetSearch(s, value, None)
+
+
+def intsetRandom(s: intset) -> int:
+    return _intsetGet(s, c_random() % intrev32ifbe(s.length))
+
+
+def intsetGet(s: intset, pos: int, value: intptr) -> int:
+    if pos < intrev32ifbe(s.length):
+        value.value = _intsetGet(s, pos)
+        return 1
+    return 0
+
+
+def intsetLen(s: intset) -> int:
+    return intrev32ifbe(s.length)
+
+
+def intsetBlobLen(s: intset) -> int:
+    # sizeof(intset)+intrev32ifbe(is->length)*intrev32ifbe(is->encoding);
+    # TODO(ruan.lj@foxmail.com): 检查Python中这个地方的实现.
+    return intrev32ifbe(s.length) * intrev32ifbe(s.encoding)
