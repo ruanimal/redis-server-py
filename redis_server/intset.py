@@ -1,3 +1,5 @@
+# TODO(ruan.lj@foxmail.com): can use memoryview to speed up buf operation.
+
 from typing import Any, Union, Callable, Optional as Opt, List
 from .csix import *
 from .endianconv import intrev32ifbe
