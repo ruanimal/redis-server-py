@@ -10,9 +10,6 @@ INTSET_ENC_INT32 = 4  # (sizeof(int32_t))
 INTSET_ENC_INT64 = 8  # (sizeof(int64_t))
 INTSET_ENCS = {INTSET_ENC_INT16, INTSET_ENC_INT32, INTSET_ENC_INT64}
 
-class intptr:
-    def __init__(self):
-        self.value: int = 0
 
 class intset:
     def __init__(self):

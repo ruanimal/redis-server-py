@@ -31,6 +31,7 @@ __all__ = [
     'strcoll',
     'int2cstr',
     'cstr2int',
+    'intptr',
 ]
 
 cstr = Union[bytearray, bytes]
@@ -105,3 +106,7 @@ def ptr2long(ptr) -> int:
 
 def strcoll(a: cstr, b: cstr):
     return locale.strcoll(a.decode(), b.decode())
+
+class intptr:
+    def __init__(self):
+        self.value: int = 0
