@@ -32,6 +32,7 @@ __all__ = [
     'int2cstr',
     'cstr2int',
     'intptr',
+    'cstrptr',
 ]
 
 cstr = Union[bytearray, bytes]
@@ -110,3 +111,11 @@ def strcoll(a: cstr, b: cstr):
 class intptr:
     def __init__(self):
         self.value: int = 0
+
+class cstrptr:
+    def __init__(self, buf: bytearray, pos=0):
+        self.buf = buf
+        self.pos = pos
+
+    def new(self, pos):
+        return cstrptr(self.buf, pos)

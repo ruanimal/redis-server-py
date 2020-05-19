@@ -1,7 +1,6 @@
-from typing import NewType
+from typing import NewType, Tuple
 from .csix import *
-
-ziplist = NewType('ziplist', bytearray)
+from .endianconv import intrev32ifbe, memrev32ifbe
 
 ZIPLIST_HEAD = 0
 ZIPLIST_TAIL = 1
@@ -49,7 +48,7 @@ ZIP_IS_STR = lambda enc: ((enc & ZIP_STR_MASK) < ZIP_STR_MASK)
 # 用于取出 length 属性的现有值，或者为 length 属性赋予新值
 #define ZIPLIST_LENGTH(zl)      (*((uint16_t*)((zl)+sizeof(uint32_t)*2)))
 # 返回 ziplist 表头的大小
-#define ZIPLIST_HEADER_SIZE     (sizeof(uint32_t)*2+sizeof(uint16_t))
+ZIPLIST_HEADER_SIZE = 4 + 4 + 2
 # 返回指向 ziplist 第一个节点（的起始位置）的指针
 #define ZIPLIST_ENTRY_HEAD(zl)  ((zl)+ZIPLIST_HEADER_SIZE)
 # 返回指向 ziplist 最后一个节点（的起始位置）的指针
@@ -57,6 +56,24 @@ ZIP_IS_STR = lambda enc: ((enc & ZIP_STR_MASK) < ZIP_STR_MASK)
 # 返回指向 ziplist 末端 ZIP_END （的起始位置）的指针
 #define ZIPLIST_ENTRY_END(zl)   ((zl)+intrev32ifbe(ZIPLIST_BYTES(zl))-1)
 
+
+def ziplist_bytes(zl: 'ziplist') -> int:
+    return zl.zlbytes
+
+def ziplist_tail_offset(zl: 'ziplist') -> int:
+    return zl.zltail
+
+def ziplist_length(zl: 'ziplist') -> int:
+    return zl.zllen
+
+def ziplist_entry_tail(zl: 'ziplist') -> int:
+    return zl.zltail
+
+def ziplist_entry_head(zl: 'ziplist') -> cstrptr:
+    return cstrptr(zl, pos=ZIPLIST_HEADER_SIZE)
+
+def ziplist_entry_end(zl: 'ziplist') -> cstrptr:
+    return cstrptr(zl, pos=zl.zlbytes-1)
 # /*
 #  * 增加 ziplist 的节点数
 #  *
@@ -68,6 +85,8 @@ ZIP_IS_STR = lambda enc: ((enc & ZIP_STR_MASK) < ZIP_STR_MASK)
 # }
 
 class zlentry:
+    __fmt__ = 'IIIIIBI'
+
     def __init__(self):
         self.prevrawlensize: int = None
         self.prevrawlen: int = None
@@ -76,6 +95,19 @@ class zlentry:
         self.headersize: int = None
         self.encoding: int = None
         self.p = None
+
+class ziplist(bytearray):
+    def __init__(self):
+        super().__init__([0 for _ in range(4 + 4 + 2 + 1)])
+        self.zlbytes: int = intrev32ifbe(len(self))
+        self.zltail: int = intrev32ifbe(self.zlbytes-1)
+        self.zllen: int = 0
+        self[-1] = 255
+
+    @property
+    def zlend(self):
+        return self[-1]
+
 
 #  * 从 ptr 中取出节点值的编码类型，并将它保存到 encoding 变量中。
 #  *
@@ -86,10 +118,49 @@ class zlentry:
 #     if ((encoding) < ZIP_STR_MASK) (encoding) &= ZIP_STR_MASK; \
 # } while(0)
 
-def zip_entry_encoding(zl: ziplist, pos: int):
-    encoding = cstr2int(zl[pos:pos+1], 'uint8')
+def zip_decode_prevlensize(p: cstrptr) -> int:
+    if p.buf[p.pos] < ZIP_BIGLEN:
+        return 1
+    else:
+        return 5
+
+def zip_decode_prevlen(p: cstrptr) -> Tuple[int, int]:
+    prevlensize = zip_decode_prevlensize(p)
+    prevlen = 0
+    if prevlensize == 1:
+        prevlen = p.buf[p.pos]
+    elif prevlensize == 5:
+        prevlen = cstr2uint32(p.buf[p.pos+1: p.pos+5])
+        prevlen = intrev32ifbe(prevlen)
+    else:
+        raise ValueError
+    return prevlensize, prevlen
+
+def zip_entry_encoding(p: cstrptr) -> int:
+    encoding = cstr2int(p.buf[p.pos: p.pos+1], 'uint8')
     assert encoding < ZIP_STR_MASK
     return encoding & ZIP_STR_MASK
+
+def zip_decode_length(p: cstrptr) -> Tuple[int, int, int]:
+    encoding = zip_entry_encoding(p)
+    lensize = 0
+    length = 0
+    if encoding < ZIP_STR_MASK:
+        if encoding == ZIP_STR_06B:
+            lensize = 1
+            length = p.buf[p.pos] & 0x3f
+        elif encoding == ZIP_STR_14B:
+            lensize = 2
+            length = cstr2int(p.buf[p.pos:p.pos+2], 'uint16')
+        elif encoding == ZIP_STR_32B:
+            lensize = 5
+            length = cstr2int(p.buf[p.pos+1:p.pos+5], 'uint32')
+        else:
+            raise ValueError
+    else:
+        lensize = 1
+        length = zipIntSize(encoding)
+    return encoding, lensize, length
 
 def zipIntSize(encoding):
     mapping = {
@@ -102,6 +173,35 @@ def zipIntSize(encoding):
     return mapping[encoding]
 
 def ziplistNew() -> ziplist:
+    return ziplist()
+
+def zipEntry(p: cstrptr) -> zlentry:
+    e = zlentry()
+    e.prevrawlensize, e.prevrawlen = zip_decode_prevlen(p)
+    e.encoding, e.lensize, e.len = zip_decode_length(p)
+    e.headersize = e.prevrawlensize + e.lensize
+    e.p = c_assignment(p)
+    return e
+
+def zipRawEntryLength(p: cstrptr):
+    prevlensize = zip_decode_prevlensize(p)
+    encoding, lensize, length = zip_decode_length(p.new(p.pos+prevlensize))
+    return prevlensize + lensize + length
+
+def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
+    curlen = intrev32ifbe(zl.zlbytes)
+    reqlen = 0
+    prevlen = 0
+
+    if p.buf[p.pos] != ZIP_END:
+        entry = zipEntry(p)
+        prevlen = entry.prevrawlen
+    else:
+        ptail = p.new(ziplist_entry_tail(zl))
+        if ptail.buf[p.pos] != ZIP_END:
+            prevlen = zipRawEntryLength(p)
+
+def ziplistPush(zl: ziplist, s: cstr, slen: int, where: int):
     pass
 
 # unsigned char *ziplistNew(void);
