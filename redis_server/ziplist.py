@@ -188,6 +188,9 @@ def zipRawEntryLength(p: cstrptr):
     encoding, lensize, length = zip_decode_length(p.new(p.pos+prevlensize))
     return prevlensize + lensize + length
 
+def zipTryEncoding(entry: cstrptr, entrylen: int, v: intptr, encoding: int):
+    pass
+
 def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
     curlen = intrev32ifbe(zl.zlbytes)
     reqlen = 0
@@ -201,8 +204,11 @@ def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
         if ptail.buf[p.pos] != ZIP_END:
             prevlen = zipRawEntryLength(p)
 
+
+
 def ziplistPush(zl: ziplist, s: cstr, slen: int, where: int):
-    pass
+    p = (where == ZIPLIST_HEAD) and ziplist_entry_head(zl) or ziplist_entry_end(zl)
+    return __ziplistInsert(zl, p, s, slen)
 
 # unsigned char *ziplistNew(void);
 # unsigned char *ziplistPush(unsigned char *zl, unsigned char *s, unsigned int slen, int where);

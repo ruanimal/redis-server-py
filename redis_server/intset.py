@@ -4,6 +4,8 @@ from typing import Any, Union, Callable, Optional as Opt, List
 from .csix import *
 from .endianconv import intrev32ifbe
 
+# TODO(rlj): 去除不必要的intrev32ifbe, 原则和unicode处理类似
+
 # intset 的编码方式
 INTSET_ENC_INT16 = 2  # (sizeof(int16_t))
 INTSET_ENC_INT32 = 4  # (sizeof(int32_t))
