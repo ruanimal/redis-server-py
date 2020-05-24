@@ -1,8 +1,10 @@
 from typing import List, Callable, Optional as Opt, Tuple
+import select
 import time
 from datetime import datetime, timedelta
 from collections import namedtuple
 from .csix import cstr
+# from .ae_select import *
 
 # 事件执行状态
 ## 成功
@@ -46,7 +48,7 @@ class aeTimeEvent:
         self.timeProc = None
         self.finalizerProc = None
         self.clientData = None
-        self.next: 'aeTimeEvent' = None
+        self.next: Opt['aeTimeEvent'] = None
 
 class aeFiredEvent:
     def __init__(self):
@@ -62,15 +64,16 @@ class aeEventLoop:
         self.lastTime: datetime = None
         self.events: List[aeFileEvent] = None
         self.fired: List[aeFiredEvent] = None
-        self.timeEventHead: aeTimeEvent = None
+        self.timeEventHead: Opt[aeTimeEvent] = None
         self.stop: int = 0
         self.apidata = None
         self.beforesleep: Opt[Callable[[aeEventLoop], None]] = None
 
 def aeCreateEventLoop(setsize: int) -> aeEventLoop:
+    from .ae_api import aeApiCreate
     eventLoop = aeEventLoop()
-    eventLoop.events = [aeFileEvent for _ in range(setsize)]
-    eventLoop.fired = [aeFiredEvent for _ in range(setsize)]
+    eventLoop.events = [aeFileEvent() for _ in range(setsize)]
+    eventLoop.fired = [aeFiredEvent() for _ in range(setsize)]
     eventLoop.setsize = setsize
     eventLoop.lastTime = datetime.now()
     eventLoop.timeEventHead = None
@@ -83,14 +86,16 @@ def aeCreateEventLoop(setsize: int) -> aeEventLoop:
         eventLoop.events[i].mask = AE_NONE
     return eventLoop
 
-def aeDeleteEventLoop(eventLoop: aeEventLoop) -> int:
+def aeDeleteEventLoop(eventLoop: aeEventLoop):
+    from .ae_api import aeApiFree
     aeApiFree(eventLoop)
 
 def aeStop(eventLoop: aeEventLoop) -> None:
     eventLoop.stop = 1
 
 def aeCreateFileEvent(eventLoop: aeEventLoop, fd: int,
-                      mask: int, proc: Callable, clientData: cstr) -> None:
+                      mask: int, proc: Callable, clientData: cstr) -> int:
+    from .ae_api import aeApiAddEvent
     if fd >= eventLoop.setsize:
         raise RuntimeError(AE_ERR)
 
@@ -109,6 +114,7 @@ def aeCreateFileEvent(eventLoop: aeEventLoop, fd: int,
     return AE_OK
 
 def aeDeleteFileEvent(eventLoop: aeEventLoop, fd: int, mask: int) -> None:
+    from .ae_api import aeApiDelEvent
     if fd >= eventLoop.setsize:
         return
     if eventLoop.events[fd].mask == AE_NONE:
@@ -130,7 +136,7 @@ def aeGetFileEvents(eventLoop: aeEventLoop, fd: int) -> int:
     return eventLoop.events[fd].mask
 
 def aeCreateTimeEvent(eventLoop: aeEventLoop, milliseconds: int,
-                      proc: Callable, clientData: cstr, finalizerProc: Callable) -> None:
+                      proc: Callable, clientData: cstr, finalizerProc: Callable) -> int:
     ident = eventLoop.timeEventNextId + 1
     te = aeTimeEvent()
     te.id = ident
@@ -150,6 +156,7 @@ def aeDeleteTimeEvent(eventLoop: aeEventLoop, ident: int):
             if prev == None:
                 eventLoop.timeEventHead = te.next
             else:
+                assert prev
                 prev.next = te.next
             if te.finalizerProc:
                 te.finalizerProc(eventLoop, te.clientData)
@@ -192,6 +199,8 @@ def processTimeEvents(eventLoop: aeEventLoop) -> int:
 
 
 def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
+    from .ae_api import aeApiPoll
+
     processed = 0
     numevents = 0
 
@@ -218,6 +227,7 @@ def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
                 tv.tv_usec = 0
         else:
             if flags & AE_DONT_WAIT:
+                assert tv
                 tv.tv_sec = tv.tv_usec = 0
             else:
                 tv = None
@@ -239,12 +249,73 @@ def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
     return processed
 
 
-# int aeWait(int fd, int mask, long long milliseconds);
-# void aeMain(aeEventLoop *eventLoop);
-# char *aeGetApiName(void);
-# void aeSetBeforeSleepProc(aeEventLoop *eventLoop, aeBeforeSleepProc *beforesleep);
-# int aeGetSetSize(aeEventLoop *eventLoop);
-# int aeResizeSetSize(aeEventLoop *eventLoop, int setsize);
+def aeWait(fd: int, mask: int, milliseconds: int) -> int:
+    """
+    (4) poll返回值
+    大于0：表示结构体数组fds中有fd描述符的状态发生变化，或可以读取、或可以写入、或出错。并且返回的值表示这些状态有变化的socket描述符的总数量；此时可以对fds数组进行遍历，以寻找那些revents不空的描述符，然后判断这个里面有哪些事件以读取数据。
+
+    等于0：表示没有描述符有状态变化，并且调用超时。
+
+    小于0：此时表示有错误发生，此时全局变量errno保存错误码。
+    """
+
+    poll = select.poll()
+    events = 0
+    retmask = 0
+
+    if mask & AE_READABLE:
+        events |= select.POLLIN
+    if mask & AE_WRITABLE:
+        events |= select.POLLOUT
+    poll.register(fd, events)
+
+    fds = poll.poll(milliseconds)
+    if fds:
+        revents = fds[0][1]
+        if revents & select.POLLIN:
+            retmask |= AE_READABLE
+        if revents & select.POLLOUT:
+            retmask |= AE_WRITABLE
+        if revents & select.POLLERR:
+            retmask |= AE_WRITABLE
+        if revents & select.POLLHUP:
+            retmask |= AE_WRITABLE
+        return retmask
+    else:
+        return 0
+
+def aeMain(eventLoop: aeEventLoop) -> None:
+    eventLoop.stop = 0
+    while eventLoop.stop:
+        if eventLoop.beforesleep:
+            eventLoop.beforesleep(eventLoop)
+        aeProcessEvents(eventLoop, AE_ALL_EVENTS)
+
+def aeGetApiName() -> str:
+    from .ae_api import aeApiName
+    return aeApiName()
+
+def aeSetBeforeSleepProc(eventLoop: aeEventLoop, beforesleep) -> None:
+    eventLoop.beforesleep = beforesleep
+
+def aeGetSetSize(eventLoop: aeEventLoop) -> int:
+    return eventLoop.setsize
+
+def aeResizeSetSize(eventLoop: aeEventLoop, setsize: int) -> int:
+    from .ae_api import aeApiResize
+
+    if setsize == eventLoop.setsize:
+        return AE_OK
+    if eventLoop.maxfd >= setsize:
+        return AE_ERR
+    if aeApiResize(eventLoop, setsize) == -1:
+        return AE_ERR
+    eventLoop.events = [aeFileEvent() for _ in range(setsize)]
+    eventLoop.fired = [aeFiredEvent() for _ in range(setsize)]
+    eventLoop.setsize = setsize
+    for i in range(eventLoop.maxfd+1, setsize):
+        eventLoop.events[i].mask = AE_NONE
+    return AE_OK
 
 ### private functions ###
 
@@ -261,7 +332,7 @@ def aeGetTime() -> Tuple[int, int]:
     now = datetime.now()
     return int(now.timestamp()), now.microsecond // 1000
 
-def aeSearchNearestTimer(eventLoop: aeEventLoop) -> aeTimeEvent:
+def aeSearchNearestTimer(eventLoop: aeEventLoop) -> Opt[aeTimeEvent]:
     te = eventLoop.timeEventHead
     nearest = None
     while te:
@@ -276,20 +347,8 @@ class timeval:
         self.tv_sec: int = 0
         self.tv_usec: int = 0
 
+    @property
+    def time(self):
+        return self.tv_sec + (self.tv_usec // 1000000)
+
 ### end private functions ###
-
-
-def aeApiCreate(eventLoop: aeEventLoop) -> int:
-    pass
-
-def aeApiFree(eventLoop: aeEventLoop) -> int:
-    pass
-
-def aeApiAddEvent(eventLoop: aeEventLoop, fd: int, mask: int) -> int:
-    pass
-
-def aeApiDelEvent(eventLoop: aeEventLoop, fd: int, mask: int) -> int:
-    pass
-
-def aeApiPoll(eventLoop: aeEventLoop, tvp: timeval) -> int:
-    pass
