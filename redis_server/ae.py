@@ -4,7 +4,6 @@ import time
 from datetime import datetime, timedelta
 from collections import namedtuple
 from .csix import cstr
-# from .ae_select import *
 
 # 事件执行状态
 ## 成功
