@@ -552,5 +552,5 @@ def ziplistLen(zl: ziplist) -> int:
             zl.zllen = length
     return length
 
-# unsigned int ziplistLen(unsigned char *zl);
-# size_t ziplistBlobLen(unsigned char *zl);
+def ziplistBlobLen(zl: ziplist) -> int:
+    return zl.zlbytes
