@@ -302,6 +302,32 @@ def __ziplistCascadeUpdate(zl: ziplist, p: cstrptr) -> ziplist:
             break
     return zl
 
+def __ziplistDelete(zl: ziplist, p: cstrptr, num: int) -> ziplist:
+    deleted = 0
+    first = zipEntry(p)
+    for i in range(num):
+        p.pos += zipRawEntryLength(p)
+        deleted += 1
+    totlen = p.pos - first.p.pos
+    if totlen > 0:
+        if p.buf[p.pos] != ZIP_END:
+            nextdiff = zipPrevLenByteDiff(p, first.prevrawlen)
+            p.pos -= nextdiff
+            zipPrevEncodeLength(p, first.prevrawlen)
+            zl.zltail -= totlen
+            tail = zipEntry(p)
+            if p.buf[p.pos+tail.headersize+tail.len] != ZIP_END:
+                zl.zltail += nextdiff
+            mv_len = zl.zlbytes - p.pos - 1
+            first.p.buf[first.p.pos:first.p.pos+mv_len] = p.buf[p.pos:p.pos+mv_len]
+        else:
+            zl.zltail = first.p.pos - first.prevrawlen
+        zl = ziplistResize(zl, zl.zlbytes - totlen + nextdiff)
+        ziplist_incr_length(zl, -deleted)
+        if nextdiff != 0:
+            zl = __ziplistCascadeUpdate(zl, p)
+    return zl
+
 def zipSaveInteger(p: cstrptr, value: int, encoding: int) -> None:
     if encoding == ZIP_INT_8B:
         p.buf[p.pos] = int2cstr(value, 'int8')
@@ -350,7 +376,7 @@ def zipLoadInteger(p: cstrptr, encoding: int) -> int:
         raise ValueError
     return ret
 
-def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
+def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int) -> ziplist:
     curlen = intrev32ifbe(zl.zlbytes)
     reqlen = 0
     prevlen = 0
@@ -453,8 +479,12 @@ def ziplistGet(p: Opt[cstrptr], sstr: cstrptr, slen: intptr, sval: intptr) -> in
         sval.value = zipLoadInteger(p.new(p.pos+entry.headersize), entry.encoding)
     return 1
 
-# unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *slen, long long *lval);
-# unsigned char *ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen);
+def ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int) -> ziplist:
+    return __ziplistInsert(zl, p, s, slen)
+
+def ziplistDelete(zl: ziplist, p: cstrptr) -> ziplist:
+    pass
+
 # unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p);
 # unsigned char *ziplistDeleteRange(unsigned char *zl, unsigned int index, unsigned int num);
 # unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);
