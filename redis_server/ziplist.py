@@ -268,23 +268,55 @@ def ziplistResize(zl: ziplist, length: int) -> ziplist:
     return zl
 
 def __ziplistCascadeUpdate(zl: ziplist, p: cstrptr) -> ziplist:
-    pass
+    curlen = zl.zlbytes
+    next_ = zlentry()
+
+    while p.buf[p.pos] != ZIP_END:
+        cur = zipEntry(p)
+        rawlen = cur.headersize + cur.len
+        rawlensize = zipPrevEncodeLength(None, rawlen)
+        if p.buf[p.pos+rawlen] == ZIP_END:
+            break
+
+        next_ = zipEntry(p.new(p.pos+rawlen))
+        if next_.prevrawlen == rawlen:
+            break
+        if next_.prevrawlensize < rawlensize:
+            extra = rawlensize - next_.prevrawlensize
+            zl = ziplistResize(zl, curlen + extra)
+
+            np = p.new(p.pos+rawlen)
+            noffset = np.pos
+            if zl.zltail != np.pos:
+                zl.zltail += extra
+            mv_len = curlen-noffset-next_.prevrawlensize-1
+            np.buf[np.pos+rawlensize:mv_len] = np.buf[np.pos+next_.prevrawlensize:mv_len]
+            zipPrevEncodeLength(np, rawlen)
+            p.pos += rawlen
+            curlen += extra
+        else:
+            if next_.prevrawlensize > rawlensize:
+                zipPrevEncodeLengthForceLarge(p.new(p.pos+rawlen), rawlen)
+            else:
+                zipPrevEncodeLength(p.new(p.pos+rawlen), rawlen)
+            break
+    return zl
 
 def zipSaveInteger(p: cstrptr, value: int, encoding: int) -> None:
     if encoding == ZIP_INT_8B:
-        p[p.pos] = int2cstr(value, 'int8')
+        p.buf[p.pos] = int2cstr(value, 'int8')
     elif encoding == ZIP_INT_16B:
-        p[p.pos: p.pos+2] = int2cstr(value, 'int16')
+        p.buf[p.pos: p.pos+2] = int2cstr(value, 'int16')
         memrev16ifbe(p.buf, p.pos)
     elif encoding == ZIP_INT_24B:
         tmp = bytearray(int2cstr((value << 8) & INT32_MAX, 'int32'))
         memrev32ifbe(tmp)
-        p[p.pos: p.pos+3] = tmp
+        p.buf[p.pos: p.pos+3] = tmp
     elif encoding == ZIP_INT_32B:
-        p[p.pos: p.pos+4] = int2cstr(value, 'int32')
+        p.buf[p.pos: p.pos+4] = int2cstr(value, 'int32')
         memrev32ifbe(p.buf, p.pos)
     elif encoding == ZIP_INT_64B:
-        p[p.pos: p.pos+8] = int2cstr(value, 'int64')
+        p.buf[p.pos: p.pos+8] = int2cstr(value, 'int64')
         memrev64ifbe(p.buf, p.pos)
     elif ZIP_INT_IMM_MIN <= encoding <= ZIP_INT_IMM_MAX:
         pass
