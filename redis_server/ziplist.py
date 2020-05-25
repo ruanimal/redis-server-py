@@ -323,6 +323,33 @@ def zipSaveInteger(p: cstrptr, value: int, encoding: int) -> None:
     else:
         raise ValueError
 
+def zipLoadInteger(p: cstrptr, encoding: int) -> int:
+    ret = 0
+    if encoding == ZIP_INT_8B:
+        ret = cstr2int(p.buf[p.pos:p.pos+1], 'int8')
+    elif encoding == ZIP_INT_16B:
+        buf = p.buf[p.pos: p.pos+2]
+        memrev16ifbe(buf)
+        ret = cstr2int(buf, 'int16')
+    elif encoding == ZIP_INT_24B:
+        buf = bytearray(b'\0')
+        buf.extend(p.buf[p.pos:p.pos+3])
+        memrev32ifbe(buf)
+        ret = cstr2int(buf, 'int32') >> 8
+    elif encoding == ZIP_INT_32B:
+        buf = p.buf[p.pos: p.pos+4]
+        memrev32ifbe(buf)
+        ret = cstr2int(buf, 'int32')
+    elif encoding == ZIP_INT_64B:
+        buf = p.buf[p.pos: p.pos+8]
+        memrev64ifbe(buf)
+        ret = cstr2int(buf, 'int64')
+    elif ZIP_INT_IMM_MIN <= encoding <= ZIP_INT_IMM_MAX:
+        ret = (encoding & ZIP_INT_IMM_MASK) - 1
+    else:
+        raise ValueError
+    return ret
+
 def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
     curlen = intrev32ifbe(zl.zlbytes)
     reqlen = 0
@@ -414,7 +441,18 @@ def ziplistPrev(zl: ziplist, p: cstrptr) -> Opt[cstrptr]:
         assert entry.prevrawlen > 0
         return p.new(p.pos - entry.prevrawlen)
 
-# unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p);
+def ziplistGet(p: Opt[cstrptr], sstr: cstrptr, slen: intptr, sval: intptr) -> int:
+    if p is None or p.buf[p.pos] == ZIP_END:
+        return 0
+    entry = zipEntry(p)
+    if ZIP_IS_STR(entry.encoding):
+        slen.value = entry.len
+        sstr.buf = p.buf
+        sstr.pos = p.pos + entry.headersize
+    else:
+        sval.value = zipLoadInteger(p.new(p.pos+entry.headersize), entry.encoding)
+    return 1
+
 # unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *slen, long long *lval);
 # unsigned char *ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen);
 # unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p);
