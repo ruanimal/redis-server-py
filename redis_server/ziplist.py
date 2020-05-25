@@ -372,8 +372,29 @@ def ziplistPush(zl: ziplist, s: cstr, slen: int, where: int):
     p = (where == ZIPLIST_HEAD) and ziplist_entry_head(zl) or ziplist_entry_end(zl)
     return __ziplistInsert(zl, p, s, slen)
 
+def ziplistIndex(zl: ziplist, index: int) -> Opt[cstrptr]:
+    p = cstrptr(zl)
+    if index < 0:
+        index = (-index) - 1
+        p = cstrptr(zl, zl.zltail)
+        if p.buf[p.pos] != ZIP_END:
+            entry = zipEntry(p)
+            while entry.prevrawlen > 0 and index:
+                index -= 1
+                p.pos -= entry.prevrawlen
+                entry = zipEntry(p)
+    else:
+        p = ziplist_entry_head(zl)
+        while p.buf[p.pos] != ZIP_END and index:
+            index -= 1
+            p.pos += zipRawEntryLength(p)
 
-# unsigned char *ziplistIndex(unsigned char *zl, int index);
+    if (p.buf[p.pos] == ZIP_END or index > 0):
+        return None
+    else:
+        return p
+
+
 # unsigned char *ziplistNext(unsigned char *zl, unsigned char *p);
 # unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p);
 # unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *slen, long long *lval);
