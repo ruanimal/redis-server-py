@@ -18,6 +18,7 @@ __all__ = [
     'INT16_MIN',
     'INT8_MAX',
     'INT8_MIN',
+    'UINT16_MAX',
     'strlen',
     'memcmp',
     'memcpy',
@@ -51,6 +52,8 @@ INT16_MAX = 2 ** 15 - 1
 INT16_MIN = -INT16_MAX - 1
 INT8_MAX = 2 ** 7 - 1
 INT8_MIN = -INT8_MAX - 1
+
+UINT16_MAX = 2 ** 16 - 1
 
 cstr2uint32 = lambda data: struct.unpack('=I', data)[0]
 cstr2uint64 = lambda data: struct.unpack('=Q', data)[0]
@@ -121,5 +124,5 @@ class cstrptr:
         self.buf = buf
         self.pos = pos
 
-    def new(self, pos):
+    def new(self, pos) -> 'cstrptr':
         return cstrptr(self.buf, pos)

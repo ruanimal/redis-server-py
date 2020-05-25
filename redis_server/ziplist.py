@@ -1,6 +1,6 @@
 from typing import NewType, Tuple, Optional as Opt
 from .csix import *
-from .endianconv import intrev32ifbe, memrev32ifbe
+from .endianconv import intrev32ifbe, memrev16ifbe, memrev32ifbe, memrev64ifbe
 
 ZIPLIST_HEAD = 0
 ZIPLIST_TAIL = 1
@@ -74,15 +74,10 @@ def ziplist_entry_head(zl: 'ziplist') -> cstrptr:
 
 def ziplist_entry_end(zl: 'ziplist') -> cstrptr:
     return cstrptr(zl, pos=zl.zlbytes-1)
-# /*
-#  * 增加 ziplist 的节点数
-#  *
-#  * T = O(1)
-#  */
-# #define ZIPLIST_INCR_LENGTH(zl,incr) { \
-#     if (ZIPLIST_LENGTH(zl) < UINT16_MAX) \
-#         ZIPLIST_LENGTH(zl) = intrev16ifbe(intrev16ifbe(ZIPLIST_LENGTH(zl))+incr); \
-# }
+
+def ziplist_incr_length(zl: 'ziplist', incr: int):
+    if zl.zllen < UINT16_MAX:
+        zl.zllen += incr
 
 class zlentry:
     __fmt__ = 'IIIIIBI'
@@ -262,6 +257,40 @@ def zipEncodeLength(p: Opt[cstrptr], encoding: int, rawlen: int) -> int:
     p.buf[p.pos:p.pos+length] = buf[:length]
     return length
 
+def zipPrevLenByteDiff(p: cstrptr, length: int) -> int:
+    prevlensize = zip_decode_prevlensize(p)
+    return zipPrevEncodeLength(None, length) - prevlensize
+
+def ziplistResize(zl: ziplist, length: int) -> ziplist:
+    zl.extend(0 for _ in range(length - len(zl)))
+    zl.zlbytes = intrev32ifbe(length)
+    zl.zltail = ZIP_END
+    return zl
+
+def __ziplistCascadeUpdate(zl: ziplist, p: cstrptr) -> ziplist:
+    pass
+
+def zipSaveInteger(p: cstrptr, value: int, encoding: int) -> None:
+    if encoding == ZIP_INT_8B:
+        p[p.pos] = int2cstr(value, 'int8')
+    elif encoding == ZIP_INT_16B:
+        p[p.pos: p.pos+2] = int2cstr(value, 'int16')
+        memrev16ifbe(p.buf, p.pos)
+    elif encoding == ZIP_INT_24B:
+        tmp = bytearray(int2cstr((value << 8) & INT32_MAX, 'int32'))
+        memrev32ifbe(tmp)
+        p[p.pos: p.pos+3] = tmp
+    elif encoding == ZIP_INT_32B:
+        p[p.pos: p.pos+4] = int2cstr(value, 'int32')
+        memrev32ifbe(p.buf, p.pos)
+    elif encoding == ZIP_INT_64B:
+        p[p.pos: p.pos+8] = int2cstr(value, 'int64')
+        memrev64ifbe(p.buf, p.pos)
+    elif ZIP_INT_IMM_MIN <= encoding <= ZIP_INT_IMM_MAX:
+        pass
+    else:
+        raise ValueError
+
 def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
     curlen = intrev32ifbe(zl.zlbytes)
     reqlen = 0
@@ -284,7 +313,28 @@ def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
 
     reqlen += zipPrevEncodeLength(None, prevlen)
     reqlen += zipEncodeLength(None, encoding_p.value, slen)
+    nextdiff = (p.buf[p.pos] != ZIP_END) and zipPrevLenByteDiff(p, reqlen) or 0
+    zl = ziplistResize(zl, curlen + reqlen + nextdiff)
+    if p.buf[p.pos] != ZIP_END:
+        memmove(p.buf, p.pos + reqlen, p.pos - nextdiff, curlen - p.pos - 1 + nextdiff)
+        zipPrevEncodeLength(p.pos + reqlen, reqlen)
+        zl.zltail = intrev32ifbe(intrev32ifbe(zl.zltail) + reqlen)
+        tail = zipEntry(p)
+        if p.buf[p.pos + reqlen + tail.headersize + tail.len] != ZIP_END:
+            zl.zltail = intrev32ifbe(intrev32ifbe(zl.zltail) + nextdiff)
+    else:
+        zl.zltail = intrev32ifbe(p.pos)
 
+    if nextdiff != 0:
+        zl = __ziplistCascadeUpdate(zl, p.new(p.pos+reqlen))
+    p.pos += zipPrevEncodeLength(p, prevlen)
+    p.pos += zipEncodeLength(p, encoding_p.value, slen)
+    if ZIP_IS_STR(encoding_p.value):
+        p.buf[p.pos:p.pos+slen] = s[:slen]
+    else:
+        zipSaveInteger(p, value_p.value, encoding_p.value)
+    ziplist_incr_length(zl, 1)
+    return zl
 
 def ziplistPush(zl: ziplist, s: cstr, slen: int, where: int):
     p = (where == ZIPLIST_HEAD) and ziplist_entry_head(zl) or ziplist_entry_end(zl)

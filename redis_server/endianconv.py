@@ -38,10 +38,14 @@ def intrev64(v: int) -> int:
     memrev64(bin_v)
     return cstr2int(bin_v, 'uint64')
 
+def dummy_memrev(buf: bytearray, pos: int=0) -> None:
+    del buf
+    del pos
+
 if sys.byteorder == LITTLE_ENDIAN:
-    memrev16ifbe = lambda p, o: None
-    memrev32ifbe = lambda p, o: None
-    memrev64ifbe = lambda p, o: None
+    memrev16ifbe = dummy_memrev
+    memrev32ifbe = dummy_memrev
+    memrev64ifbe = dummy_memrev
     intrev16ifbe = lambda v: v
     intrev32ifbe = lambda v: v
     intrev64ifbe = lambda v: v
