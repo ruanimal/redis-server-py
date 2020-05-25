@@ -483,7 +483,14 @@ def ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int) -> ziplist:
     return __ziplistInsert(zl, p, s, slen)
 
 def ziplistDelete(zl: ziplist, p: cstrptr) -> ziplist:
-    pass
+    return __ziplistDelete(zl, p, 1)
+
+def ziplistDeleteRange(zl: ziplist, index: int, num: int) -> ziplist:
+    p = ziplistIndex(zl, index)
+    if p is None:
+        return zl
+    else:
+        return __ziplistDelete(zl, p, num)
 
 # unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p);
 # unsigned char *ziplistDeleteRange(unsigned char *zl, unsigned int index, unsigned int num);
