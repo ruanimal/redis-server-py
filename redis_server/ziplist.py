@@ -57,17 +57,17 @@ ZIPLIST_HEADER_SIZE = 4 + 4 + 2
 #define ZIPLIST_ENTRY_END(zl)   ((zl)+intrev32ifbe(ZIPLIST_BYTES(zl))-1)
 
 
-def ziplist_bytes(zl: 'ziplist') -> int:
-    return zl.zlbytes
+# def ziplist_bytes(zl: 'ziplist') -> int:
+#     return zl.zlbytes
 
-def ziplist_tail_offset(zl: 'ziplist') -> int:
-    return zl.zltail
+# def ziplist_tail_offset(zl: 'ziplist') -> int:
+#     return zl.zltail
 
-def ziplist_length(zl: 'ziplist') -> int:
-    return zl.zllen
+# def ziplist_length(zl: 'ziplist') -> int:
+#     return zl.zllen
 
-def ziplist_entry_tail(zl: 'ziplist') -> int:
-    return zl.zltail
+def ziplist_entry_tail(zl: 'ziplist') -> cstrptr:
+    return cstrptr(zl, pos=zl.zltail)
 
 def ziplist_entry_head(zl: 'ziplist') -> cstrptr:
     return cstrptr(zl, pos=ZIPLIST_HEADER_SIZE)
@@ -403,7 +403,17 @@ def ziplistNext(zl: ziplist, p: cstrptr) -> Opt[cstrptr]:
         return None
     return p
 
-# unsigned char *ziplistNext(unsigned char *zl, unsigned char *p);
+def ziplistPrev(zl: ziplist, p: cstrptr) -> Opt[cstrptr]:
+    if p.buf[p.pos] == ZIP_END:
+        p = ziplist_entry_tail(zl)
+        return None if (p.buf[p.pos] == ZIP_END) else p
+    elif p == ziplist_entry_head(zl):
+        return None
+    else:
+        entry = zipEntry(p)
+        assert entry.prevrawlen > 0
+        return p.new(p.pos - entry.prevrawlen)
+
 # unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p);
 # unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *slen, long long *lval);
 # unsigned char *ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen);

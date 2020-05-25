@@ -126,3 +126,6 @@ class cstrptr:
 
     def new(self, pos) -> 'cstrptr':
         return cstrptr(self.buf, pos)
+
+    def __eq__(self, other) -> bool:
+        return self.buf is other.buf and self.pos == other.pos
