@@ -39,9 +39,9 @@ def intrev64(v: int) -> int:
     return cstr2int(bin_v, 'uint64')
 
 if sys.byteorder == LITTLE_ENDIAN:
-    memrev16ifbe = lambda p: None
-    memrev32ifbe = lambda p: None
-    memrev64ifbe = lambda p: None
+    memrev16ifbe = lambda p, o: None
+    memrev32ifbe = lambda p, o: None
+    memrev64ifbe = lambda p, o: None
     intrev16ifbe = lambda v: v
     intrev32ifbe = lambda v: v
     intrev64ifbe = lambda v: v

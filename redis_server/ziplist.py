@@ -1,4 +1,4 @@
-from typing import NewType, Tuple
+from typing import NewType, Tuple, Optional as Opt
 from .csix import *
 from .endianconv import intrev32ifbe, memrev32ifbe
 
@@ -162,7 +162,7 @@ def zip_decode_length(p: cstrptr) -> Tuple[int, int, int]:
         length = zipIntSize(encoding)
     return encoding, lensize, length
 
-def zipIntSize(encoding):
+def zipIntSize(encoding: int) -> int:
     mapping = {
         ZIP_INT_8B:  1,
         ZIP_INT_16B: 2,
@@ -188,13 +188,86 @@ def zipRawEntryLength(p: cstrptr):
     encoding, lensize, length = zip_decode_length(p.new(p.pos+prevlensize))
     return prevlensize + lensize + length
 
-def zipTryEncoding(entry: cstrptr, entrylen: int, v: intptr, encoding: int):
-    pass
+def zipTryEncoding(entry: cstr, entrylen: int, v: intptr, encoding: intptr) -> int:
+    if entrylen >= 32 or encoding == 0:
+        return 0
+
+    value = 0
+    try:
+        value = int(entry[:entrylen])
+    except ValueError:
+        return 0
+
+    if 0 <= value <= 12:
+        enc = ZIP_INT_IMM_MIN + value
+    elif INT8_MIN <= value <= INT8_MAX:
+        enc = ZIP_INT_8B
+    elif INT16_MIN <= value <= INT16_MAX:
+        enc = ZIP_INT_16B
+    elif INT32_MIN <= value <= INT32_MAX:
+        enc = ZIP_INT_32B
+    else:
+        enc = ZIP_INT_64B
+    v.value = value
+    encoding.value = enc
+    return 1
+
+def zipPrevEncodeLength(p: Opt[cstrptr], length: int) -> int:
+    if p is None:
+        return length < ZIP_BIGLEN and 1 or 4 + 1  # sizeof(unsigned int) + 1
+
+    if length < ZIP_BIGLEN:
+        p.buf[p.pos] = length
+        return 1
+    else:
+        p.buf[p.pos] = ZIP_BIGLEN
+        p.buf[p.pos+1:p.pos+5] = int2cstr(length, 'uint32')
+        memrev32ifbe(p.buf, p.pos+1)
+        return 1 + 4
+
+def zipPrevEncodeLengthForceLarge(p: Opt[cstrptr], length: int) -> None:
+    if p is None:
+        return
+    p.buf[p.pos] = ZIP_BIGLEN
+    p.buf[p.pos+1:p.pos+5] = int2cstr(length, 'uint32')
+    memrev32ifbe(p.buf, p.pos+1)
+
+def zipEncodeLength(p: Opt[cstrptr], encoding: int, rawlen: int) -> int:
+    length = 1
+    buf = bytearray(0 for _ in range(5))
+    if ZIP_IS_STR(encoding):
+        if rawlen <= 0x3f:
+            if not p:
+                return length
+            buf[0] = ZIP_STR_06B | rawlen
+        elif rawlen <= 0x3fff:
+            length += 1
+            if not p:
+                return length
+            buf[0] = ZIP_STR_14B | ((rawlen >> 8) & 0x3f)
+            buf[1] = rawlen & 0xff
+        else:
+            length += 4
+            if not p:
+                return length
+            buf[0] = ZIP_STR_32B
+            buf[1] = (rawlen >> 24) & 0xff
+            buf[2] = (rawlen >> 16) & 0xff
+            buf[3] = (rawlen >> 8) & 0xff
+            buf[4] = rawlen & 0xff
+    else:
+        if not p:
+            return length
+        buf[0] = encoding
+    p.buf[p.pos:p.pos+length] = buf[:length]
+    return length
 
 def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
     curlen = intrev32ifbe(zl.zlbytes)
     reqlen = 0
     prevlen = 0
+    encoding_p = intptr(0)
+    value_p = intptr(123456789)
 
     if p.buf[p.pos] != ZIP_END:
         entry = zipEntry(p)
@@ -204,6 +277,13 @@ def __ziplistInsert(zl: ziplist, p: cstrptr, s: cstr, slen: int):
         if ptail.buf[p.pos] != ZIP_END:
             prevlen = zipRawEntryLength(p)
 
+    if zipTryEncoding(s, slen, value_p, encoding_p):
+        reqlen = zipIntSize(encoding_p.value)
+    else:
+        reqlen = slen
+
+    reqlen += zipPrevEncodeLength(None, prevlen)
+    reqlen += zipEncodeLength(None, encoding_p.value, slen)
 
 
 def ziplistPush(zl: ziplist, s: cstr, slen: int, where: int):

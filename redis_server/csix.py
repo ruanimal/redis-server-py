@@ -16,6 +16,8 @@ __all__ = [
     'INT32_MIN',
     'INT16_MAX',
     'INT16_MIN',
+    'INT8_MAX',
+    'INT8_MIN',
     'strlen',
     'memcmp',
     'memcpy',
@@ -45,8 +47,10 @@ INT64_MAX = 2 ** 63 - 1
 INT64_MIN = -INT64_MAX - 1
 INT32_MAX = 2 ** 31 - 1
 INT32_MIN = -INT32_MAX - 1
-INT16_MAX = 2 ** 16 - 1
+INT16_MAX = 2 ** 15 - 1
 INT16_MIN = -INT16_MAX - 1
+INT8_MAX = 2 ** 7 - 1
+INT8_MIN = -INT8_MAX - 1
 
 cstr2uint32 = lambda data: struct.unpack('=I', data)[0]
 cstr2uint64 = lambda data: struct.unpack('=Q', data)[0]
@@ -109,8 +113,8 @@ def strcoll(a: cstr, b: cstr):
     return locale.strcoll(a.decode(), b.decode())
 
 class intptr:
-    def __init__(self):
-        self.value: int = 0
+    def __init__(self, value=0):
+        self.value: int = value
 
 class cstrptr:
     def __init__(self, buf: bytearray, pos=0):
