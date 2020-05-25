@@ -394,6 +394,14 @@ def ziplistIndex(zl: ziplist, index: int) -> Opt[cstrptr]:
     else:
         return p
 
+def ziplistNext(zl: ziplist, p: cstrptr) -> Opt[cstrptr]:
+    if p.buf[p.pos] == ZIP_END:
+        return None
+
+    p.pos += zipRawEntryLength(p)
+    if p.buf[p.pos] == ZIP_END:
+        return None
+    return p
 
 # unsigned char *ziplistNext(unsigned char *zl, unsigned char *p);
 # unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p);
