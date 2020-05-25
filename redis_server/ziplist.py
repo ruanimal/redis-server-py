@@ -492,8 +492,25 @@ def ziplistDeleteRange(zl: ziplist, index: int, num: int) -> ziplist:
     else:
         return __ziplistDelete(zl, p, num)
 
-# unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p);
-# unsigned char *ziplistDeleteRange(unsigned char *zl, unsigned int index, unsigned int num);
+def ziplistCompare(p: cstrptr, sstr: cstrptr, slen: int) -> int:
+    if p.buf[p.pos] == ZIP_END:
+        return 0
+    entry = zipEntry(p)
+    if ZIP_IS_STR(entry.encoding):
+        if entry.len == slen:
+            tmp_pos = p.pos+entry.headersize
+            return int(memcmp(p.buf[tmp_pos:tmp_pos+slen],
+                sstr.buf[sstr.pos:sstr.pos+slen], slen) == 0)
+        else:
+            return 0
+    else:
+        sval = intptr()
+        sencoding = intptr()
+        if zipTryEncoding(sstr.buf[sstr.pos:sstr.pos+slen], slen, sval, sencoding):
+            zval = zipLoadInteger(p.new(p.pos+entry.headersize), entry.encoding)
+            return int(zval == sval)
+    return 0
+
 # unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);
 # unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip);
 # unsigned int ziplistLen(unsigned char *zl);
