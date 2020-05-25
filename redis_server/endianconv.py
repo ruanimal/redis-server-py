@@ -8,17 +8,17 @@ from .csix import int2cstr, cstr2int
 LITTLE_ENDIAN = 'little'
 BIG_ENDIAN = 'big'
 
-def memrev16(buf: bytearray, offset: int=0):
+def memrev16(buf: bytearray, offset: int=0) -> None:
     assert offset < len(buf)
 
     buf[offset:offset+2] = buf[offset:offset+2][::-1]
 
-def memrev32(buf: bytearray, offset: int=0):
+def memrev32(buf: bytearray, offset: int=0) -> None:
     assert offset < len(buf)
 
     buf[offset:offset+4] = buf[offset:offset+4][::-1]
 
-def memrev64(buf: bytearray, offset: int=0):
+def memrev64(buf: bytearray, offset: int=0) -> None:
     assert offset < len(buf)
 
     buf[offset:offset+8] = buf[offset:offset+8][::-1]
@@ -38,9 +38,9 @@ def intrev64(v: int) -> int:
     memrev64(bin_v)
     return cstr2int(bin_v, 'uint64')
 
-def dummy_memrev(buf: bytearray, pos: int=0) -> None:
+def dummy_memrev(buf: bytearray, offset: int=0) -> None:
     del buf
-    del pos
+    del offset
 
 if sys.byteorder == LITTLE_ENDIAN:
     memrev16ifbe = dummy_memrev
