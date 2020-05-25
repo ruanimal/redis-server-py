@@ -19,6 +19,7 @@ __all__ = [
     'INT8_MAX',
     'INT8_MIN',
     'UINT16_MAX',
+    'UCHAR_MAX',
     'strlen',
     'memcmp',
     'memcpy',
@@ -54,6 +55,7 @@ INT8_MAX = 2 ** 7 - 1
 INT8_MIN = -INT8_MAX - 1
 
 UINT16_MAX = 2 ** 16 - 1
+UCHAR_MAX = 255
 
 cstr2uint32 = lambda data: struct.unpack('=I', data)[0]
 cstr2uint64 = lambda data: struct.unpack('=Q', data)[0]

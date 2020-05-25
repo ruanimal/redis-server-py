@@ -511,7 +511,34 @@ def ziplistCompare(p: cstrptr, sstr: cstrptr, slen: int) -> int:
             return int(zval == sval)
     return 0
 
-# unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);
+def ziplistFind(p: cstrptr, vstr: cstr, vlen: int, skip: int) -> Opt[cstrptr]:
+    skipcnt = 0
+    vll = intptr()
+    vencoding = intptr()
+    while p.buf[p.pos] != ZIP_END:
+        prevlensize = zip_decode_prevlensize(p)
+        encoding, lensize, length = zip_decode_length(p.new(p.pos+prevlensize))
+        q = p.new(p.pos + prevlensize + lensize)
+        if skipcnt == 0:
+            if ZIP_IS_STR(encoding):
+                if length == vlen and (
+                    memcmp(q.buf[q.pos:q.pos+vlen], vstr[:vlen], vlen) == 0):
+                    return p
+            else:
+                if encoding == 0:
+                    if not zipTryEncoding(vstr, vlen, vll, vencoding):
+                        vencoding.value = UCHAR_MAX
+                    assert vencoding.value
+                if vencoding.value != UCHAR_MAX:
+                    ll = zipLoadInteger(q, encoding)
+                    if ll == vll.value:
+                        return p
+            skipcnt = skip
+        else:
+            skipcnt -= 1
+        p.pos = q.pos + length
+    return None
+
 # unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip);
 # unsigned int ziplistLen(unsigned char *zl);
 # size_t ziplistBlobLen(unsigned char *zl);
