@@ -539,6 +539,18 @@ def ziplistFind(p: cstrptr, vstr: cstr, vlen: int, skip: int) -> Opt[cstrptr]:
         p.pos = q.pos + length
     return None
 
-# unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip);
+def ziplistLen(zl: ziplist) -> int:
+    length = 0
+    if zl.zllen < UINT16_MAX:
+        length = zl.zllen
+    else:
+        p = cstrptr(zl, ZIPLIST_HEADER_SIZE)
+        while p.buf[p.pos] != ZIP_END:
+            p.pos += zipRawEntryLength(p)
+            length += 1
+        if length < UINT16_MAX:
+            zl.zllen = length
+    return length
+
 # unsigned int ziplistLen(unsigned char *zl);
 # size_t ziplistBlobLen(unsigned char *zl);
