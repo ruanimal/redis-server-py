@@ -21,6 +21,9 @@ ANET_CONNECT_NONBLOCK = 1
 def anetSetReuseAddr(fd: socket.socket) -> None:
     fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+def anetNonBlock(fd: socket.socket) -> None:
+    fd.setblocking(False)
+
 def anetTcpGenericConnect(addr: str, port: int, source_addr: str, flags: int) -> socket.socket:
     servinfo = socket.getaddrinfo(addr, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
     s = None
@@ -32,6 +35,8 @@ def anetTcpGenericConnect(addr: str, port: int, source_addr: str, flags: int) ->
         except OSError:
             continue
         anetSetReuseAddr(s)
+        if flags & ANET_CONNECT_NONBLOCK:
+            anetNonBlock(s)
         if source_addr:
             try:
                 bservinfo = socket.getaddrinfo(source_addr, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
