@@ -75,10 +75,20 @@ def anetUnixGenericConnect(path: str, flags: int) -> socket.socket:
     return s
 
 def anetUnixConnect(path: str, flags: int) -> socket.socket:
+    return anetUnixGenericConnect(path, ANET_CONNECT_NONE)
+
+def anetUnixNonBlockConnect(path: str, flags: int) -> socket.socket:
     return anetUnixGenericConnect(path, ANET_CONNECT_NONBLOCK)
 
-# int anetUnixConnect(char *err, char *path);
-# int anetUnixNonBlockConnect(char *err, char *path);
+def anetRead(fd: socket.socket, count: int) -> bytearray:
+    buf = bytearray(count)
+    view = memoryview(buf)
+    while count:
+        nbytes = fd.recv_into(view, count)
+        view = view[nbytes:] # slicing views is cheap
+        count -= nbytes
+    return buf
+
 # int anetRead(int fd, char *buf, int count);
 # int anetResolve(char *err, char *host, char *ipbuf, size_t ipbuf_len);
 # int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len);
