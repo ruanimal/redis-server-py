@@ -1,3 +1,4 @@
+import os
 import socket
 from typing import NewType, Tuple, Optional as Opt
 from .csix import *
@@ -119,7 +120,7 @@ def anetV6Only(s: socket.socket) -> None:
         s.close()
         raise
 
-def anetListen(s: socket.socket, host: str, port: int, backlog: int) -> None:
+def anetListen(s: socket.socket, host: str, port: Opt[int], backlog: int) -> None:
     try:
         s.bind((host, port))
         s.listen(backlog)
@@ -149,6 +150,21 @@ def anetTcpServer(port: int, bindaddr: str, backlog: int) -> socket.socket:
 def anetTcp6Server(port: int, bindaddr: str, backlog: int) -> socket.socket:
     return _anetTcpServer(port, bindaddr, socket.AF_INET6, backlog)
 
+def anetCreateSocket(domain: int) -> socket.socket:
+    try:
+        s = socket.socket(domain, socket.SOCK_STREAM)
+        anetSetReuseAddr(s)
+        return s
+    except OSError:
+        s.close()
+        raise
+
+def anetUnixServer(path: str, perm: int, backlog: int) -> socket.socket:
+    s = anetCreateSocket(socket.AF_UNIX)
+    anetListen(s, path, None, backlog)
+    if perm:
+        os.chmod(path, perm)
+    return s
 
 # int anetUnixServer(char *err, char *path, mode_t perm, int backlog);
 # int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port);
