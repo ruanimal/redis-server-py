@@ -67,6 +67,15 @@ def anetTcpNonBlockConnect(addr: str, port: int) -> socket.socket:
 def anetTcpNonBlockBindConnect(addr: str, port: int, source_addr: str) -> socket.socket:
     return anetTcpGenericConnect(addr, port, source_addr, ANET_CONNECT_NONBLOCK)
 
+def anetUnixGenericConnect(path: str, flags: int) -> socket.socket:
+    s = socket.socket(socket.AF_UNIX)
+    if flags & ANET_CONNECT_NONBLOCK:
+        anetNonBlock(s)
+    s.connect(path)
+    return s
+
+def anetUnixConnect(path: str, flags: int) -> socket.socket:
+    return anetUnixGenericConnect(path, ANET_CONNECT_NONBLOCK)
 
 # int anetUnixConnect(char *err, char *path);
 # int anetUnixNonBlockConnect(char *err, char *path);
