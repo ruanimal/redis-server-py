@@ -19,10 +19,18 @@ ANET_CONNECT_NONBLOCK = 1
 
 # 设置地址可重用
 def anetSetReuseAddr(fd: socket.socket) -> None:
-    fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except OSError:
+        fd.close()
+        raise
 
 def anetNonBlock(fd: socket.socket) -> None:
-    fd.setblocking(False)
+    try:
+        fd.setblocking(False)
+    except OSError:
+        fd.close()
+        raise
 
 def anetTcpGenericConnect(addr: str, port: int, source_addr: Opt[str], flags: int) -> socket.socket:
     servinfo = socket.getaddrinfo(addr, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
@@ -104,10 +112,44 @@ def anetResolve(host: str) -> str:
 def anetResolveIP(host: str) -> str:
     return anetGenericResolve(host, ANET_IP_ONLY)
 
-# int anetResolve(char *err, char *host, char *ipbuf, size_t ipbuf_len);
-# int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len);
-# int anetTcpServer(char *err, int port, char *bindaddr, int backlog);
-# int anetTcp6Server(char *err, int port, char *bindaddr, int backlog);
+def anetV6Only(s: socket.socket) -> None:
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.IPPROTO_IPV6, 1)
+    except OSError:
+        s.close()
+        raise
+
+def anetListen(s: socket.socket, host: str, port: int, backlog: int) -> None:
+    try:
+        s.bind((host, port))
+        s.listen(backlog)
+    except OSError:
+        s.close()
+        raise
+
+def _anetTcpServer(port: int, bindaddr: str, af: int, backlog: int) -> socket.socket:
+    serverinfo = socket.getaddrinfo(bindaddr, port, af, socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
+    s = None
+    for (family, type_, proto, _, sockaddr) in serverinfo:
+        try:
+            s = socket.socket(family, type_, proto)
+        except OSError:
+            continue
+        if af == socket.AF_INET6:
+            anetV6Only(s)
+        anetSetReuseAddr(s)
+        anetListen(s, sockaddr[0], sockaddr[1], backlog)
+    if not s:
+        raise AnetErr('start tcp server fail')
+    return s
+
+def anetTcpServer(port: int, bindaddr: str, backlog: int) -> socket.socket:
+    return _anetTcpServer(port, bindaddr, socket.AF_INET, backlog)
+
+def anetTcp6Server(port: int, bindaddr: str, backlog: int) -> socket.socket:
+    return _anetTcpServer(port, bindaddr, socket.AF_INET6, backlog)
+
+
 # int anetUnixServer(char *err, char *path, mode_t perm, int backlog);
 # int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port);
 # int anetUnixAccept(char *err, int serversock);
