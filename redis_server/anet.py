@@ -1,7 +1,10 @@
 import os
+import sys
 import socket
 from typing import NewType, Tuple, Optional as Opt
 from .csix import *
+
+Address = Tuple[str, int]
 
 class AnetErr(Exception):
     pass
@@ -32,6 +35,12 @@ def anetNonBlock(fd: socket.socket) -> None:
     except OSError:
         fd.close()
         raise
+
+def anetSetTcpNoDelay(fd: socket.socket, val: int) -> None:
+    fd.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, val)
+
+def anetTcpKeepAlive(fd: socket.socket) -> None:
+    fd.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
 def anetTcpGenericConnect(addr: str, port: int, source_addr: Opt[str], flags: int) -> socket.socket:
     servinfo = socket.getaddrinfo(addr, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
@@ -166,14 +175,32 @@ def anetUnixServer(path: str, perm: int, backlog: int) -> socket.socket:
         os.chmod(path, perm)
     return s
 
-# int anetUnixServer(char *err, char *path, mode_t perm, int backlog);
-# int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port);
-# int anetUnixAccept(char *err, int serversock);
-# int anetWrite(int fd, char *buf, int count);
-# int anetNonBlock(char *err, int fd);
-# int anetEnableTcpNoDelay(char *err, int fd);
-# int anetDisableTcpNoDelay(char *err, int fd);
-# int anetTcpKeepAlive(char *err, int fd);
-# int anetPeerToString(int fd, char *ip, size_t ip_len, int *port);
-# int anetKeepAlive(char *err, int fd, int interval);
-# int anetSockName(int fd, char *ip, size_t ip_len, int *port);
+def anetTcpAccept(serversock: socket.socket) -> Tuple[socket.socket, Address]:
+    return serversock.accept()
+
+def anetUnixAccept(serversock: socket.socket) -> Tuple[socket.socket, str]:
+    return serversock.accept()
+
+def anetWrite(fd: socket.socket, buf: cstr) -> None:
+    return fd.sendall(buf)
+
+def anetEnableTcpNoDelay(fd: socket.socket) -> None:
+    return anetSetTcpNoDelay(fd, 1)
+
+def anetDisableTcpNoDelay(fd: socket.socket) -> None:
+    return anetSetTcpNoDelay(fd, 0)
+
+def anetPeerToString(fd: socket.socket) -> Address:
+    return fd.getpeername()
+
+def anetKeepAlive(fd: socket.socket, interval: int) -> None:
+    if sys.platform != 'linux':
+        fd.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        return
+
+    fd.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, interval)
+    fd.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, interval // 3 or 1)
+    fd.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 3)
+
+def anetSockName(fd: socket.socket) -> Address:
+    return fd.getsockname()
