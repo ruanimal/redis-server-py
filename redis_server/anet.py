@@ -85,11 +85,25 @@ def anetRead(fd: socket.socket, count: int) -> bytearray:
     view = memoryview(buf)
     while count:
         nbytes = fd.recv_into(view, count)
-        view = view[nbytes:] # slicing views is cheap
+        view = view[nbytes:]   # slicing views is cheap
         count -= nbytes
     return buf
 
-# int anetRead(int fd, char *buf, int count);
+def anetGenericResolve(host: str, flags: int) -> str:
+    if flags & ANET_IP_ONLY:
+        ai_flags = int(socket.AI_NUMERICHOST)
+    else:
+        ai_flags = 0
+    info = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM, ai_flags)
+    # (family, type, proto, canonname, sockaddr)
+    return info[0][4][0]
+
+def anetResolve(host: str) -> str:
+    return anetGenericResolve(host, ANET_NONE)
+
+def anetResolveIP(host: str) -> str:
+    return anetGenericResolve(host, ANET_IP_ONLY)
+
 # int anetResolve(char *err, char *host, char *ipbuf, size_t ipbuf_len);
 # int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len);
 # int anetTcpServer(char *err, int port, char *bindaddr, int backlog);
