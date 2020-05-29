@@ -24,7 +24,7 @@ def anetSetReuseAddr(fd: socket.socket) -> None:
 def anetNonBlock(fd: socket.socket) -> None:
     fd.setblocking(False)
 
-def anetTcpGenericConnect(addr: str, port: int, source_addr: str, flags: int) -> socket.socket:
+def anetTcpGenericConnect(addr: str, port: int, source_addr: Opt[str], flags: int) -> socket.socket:
     servinfo = socket.getaddrinfo(addr, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
     s = None
     bound = 0
@@ -58,9 +58,16 @@ def anetTcpGenericConnect(addr: str, port: int, source_addr: str, flags: int) ->
         raise AnetErr('create socket fail')
     return s
 
-# int anetTcpConnect(char *err, char *addr, int port);
-# int anetTcpNonBlockConnect(char *err, char *addr, int port);
-# int anetTcpNonBlockBindConnect(char *err, char *addr, int port, char *source_addr);
+def anetTcpConnect(addr: str, port: int) -> socket.socket:
+    return anetTcpGenericConnect(addr, port, None, ANET_CONNECT_NONE)
+
+def anetTcpNonBlockConnect(addr: str, port: int) -> socket.socket:
+    return anetTcpGenericConnect(addr, port, None, ANET_CONNECT_NONBLOCK)
+
+def anetTcpNonBlockBindConnect(addr: str, port: int, source_addr: str) -> socket.socket:
+    return anetTcpGenericConnect(addr, port, source_addr, ANET_CONNECT_NONBLOCK)
+
+
 # int anetUnixConnect(char *err, char *path);
 # int anetUnixNonBlockConnect(char *err, char *path);
 # int anetRead(int fd, char *buf, int count);
