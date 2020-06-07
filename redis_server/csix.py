@@ -1,5 +1,6 @@
 import struct
 import locale
+from datetime import datetime
 from typing import Union
 from copy import copy as c_assignment   # 模拟c语言赋值, 拷贝所有成员
 from random import randint
@@ -37,6 +38,7 @@ __all__ = [
     'cstr2int',
     'intptr',
     'cstrptr',
+    'timeval',
 ]
 
 cstr = Union[bytearray, bytes]
@@ -131,3 +133,22 @@ class cstrptr:
 
     def __eq__(self, other) -> bool:
         return self.buf is other.buf and self.pos == other.pos
+
+class timeval:
+    def __init__(self):
+        self.tv_sec: int = 0
+        self.tv_usec: int = 0
+
+    @property
+    def time(self):
+        return self.tv_sec + (self.tv_usec // 1000000)
+
+    @classmethod
+    def from_datetime(cls, dt: datetime=None):
+        """create timeval from datetime"""
+        if dt is None:
+            dt = datetime.now()
+        tv = cls()
+        tv.tv_sec = int(dt.timestamp())
+        tv.tv_usec = dt.microsecond
+        return tv

@@ -3,7 +3,7 @@ import select
 import time
 from datetime import datetime, timedelta
 from collections import namedtuple
-from .csix import cstr
+from .csix import cstr, timeval
 
 # 事件执行状态
 ## 成功
@@ -340,14 +340,4 @@ def aeSearchNearestTimer(eventLoop: aeEventLoop) -> Opt[aeTimeEvent]:
             nearest = te
         te = te.next
     return nearest
-
-class timeval:
-    def __init__(self):
-        self.tv_sec: int = 0
-        self.tv_usec: int = 0
-
-    @property
-    def time(self):
-        return self.tv_sec + (self.tv_usec // 1000000)
-
 ### end private functions ###
