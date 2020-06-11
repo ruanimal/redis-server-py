@@ -3,11 +3,13 @@ import random
 import time
 import logging
 import os
+import uuid
 from typing import List, Callable, Optional as Opt, Tuple
 from dataclasses import dataclass
 from .csix import timeval
 from .ae import aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop
 from .config import ServerConfig as Conf
+from .config import *
 
 __version__ = '0.0.1'
 
@@ -38,6 +40,9 @@ class saveparam:
     seconds: int = 0
     # 发生多少次修改
     changes: int = 0
+
+def populateCommandTable():
+    pass
 
 class RedisServer(object):
     def __init__(self):
@@ -71,7 +76,7 @@ class RedisServer(object):
         self.bindaddr_count: int = 0             # /* Number of addresses in server.bindaddr[] */
         # UNIX 套接字
         self.unixsocket: str = ''               # /* UNIX socket path */
-        self.unixsocketperm: str = ''          # /* UNIX socket permission */
+        self.unixsocketperm: int = 0          # /* UNIX socket permission */
         # 描述符
         self.ipfd: List[int] = []    # /* TCP socket file descriptors */
         # 描述符数量
@@ -287,7 +292,7 @@ class RedisServer(object):
         #  Save points array for RDB
         self.saveparams: List[saveparam] = []
         #  Number of saving points
-        self.saveparamslen: int = 0
+        # self.saveparamslen: int = 0
         #  Name of RDB file
         self.rdb_filename: str = ''
         #  Use compression in RDB?
@@ -365,6 +370,10 @@ class RedisServer(object):
         #  Software watchdog period in ms. 0 = off
         self.watchdog_period: int = 0
 
+    @property
+    def saveparamslen(self):
+        return len(self.saveparams)
+
 server = RedisServer()
 
 def checkForSentinelMode() -> int:
@@ -375,20 +384,137 @@ def checkForSentinelMode() -> int:
         return 1
     return 0
 
+def getLRUClock() -> int:
+    return (int(time.time() * 1000) / REDIS_LRU_CLOCK_RESOLUTION) & REDIS_LRU_CLOCK_MAX
+
 def initServerConfig():
-    # TODO(ruan.lj@foxmail.com): something to do.
-    pass
+    import platform
+    ## 服务器状态
+    # 设置服务器的运行 ID
+    server.runid = str(uuid.uuid4())
+    # 设置默认配置文件路径
+    server.configfile = "";
+    # 设置默认服务器频率
+    server.hz = Conf.REDIS_DEFAULT_HZ;
+    # 设置服务器的运行架构
+    server.arch_bits = (platform.architecture()[0] == '64bit') and 64 or 32
+    # 设置默认服务器端口号
+    server.port = Conf.REDIS_SERVERPORT
+    server.tcp_backlog = Conf.REDIS_TCP_BACKLOG
+    server.bindaddr_count = 0
+    server.unixsocket = ""
+    server.unixsocketperm = Conf.REDIS_DEFAULT_UNIX_SOCKET_PERM
+    server.ipfd_count = 0
+    server.sofd = -1
+    server.dbnum = Conf.REDIS_DEFAULT_DBNUM
+    server.verbosity = Conf.REDIS_DEFAULT_VERBOSITY
+    server.maxidletime = Conf.REDIS_MAXIDLETIME
+    server.tcpkeepalive = Conf.REDIS_DEFAULT_TCP_KEEPALIVE
+    server.active_expire_enabled = 1
+    server.client_max_querybuf_len = Conf.REDIS_MAX_QUERYBUF_LEN
+    server.saveparams = []
+    server.loading = 0
+    server.logfile = "";
+    server.daemonize = Conf.REDIS_DEFAULT_DAEMONIZE
+    server.aof_state = Conf.REDIS_AOF_OFF
+    server.aof_fsync = Conf.REDIS_DEFAULT_AOF_FSYNC
+    server.aof_no_fsync_on_rewrite = Conf.REDIS_DEFAULT_AOF_NO_FSYNC_ON_REWRITE
+    server.aof_rewrite_perc = Conf.REDIS_AOF_REWRITE_PERC
+    server.aof_rewrite_min_size = Conf.REDIS_AOF_REWRITE_MIN_SIZE
+    server.aof_rewrite_base_size = 0
+    server.aof_rewrite_scheduled = 0
+    server.aof_last_fsync = time.time()
+    server.aof_rewrite_time_last = -1
+    server.aof_rewrite_time_start = -1
+    server.aof_lastbgrewrite_status = Conf.REDIS_OK
+    server.aof_delayed_fsync = 0
+    server.aof_fd = -1
+    server.aof_selected_db = -1   # /* Make sure the first time will not match */
+    server.aof_flush_postponed_start = 0
+    server.aof_rewrite_incremental_fsync = Conf.REDIS_DEFAULT_AOF_REWRITE_INCREMENTAL_FSYNC
+    server.pidfile = Conf.REDIS_DEFAULT_PID_FILE
+    server.rdb_filename = Conf.REDIS_DEFAULT_RDB_FILENAME
+    server.aof_filename = Conf.REDIS_DEFAULT_AOF_FILENAME
+    server.requirepass = ""
+    server.rdb_compression = Conf.REDIS_DEFAULT_RDB_COMPRESSION
+    server.rdb_checksum = Conf.REDIS_DEFAULT_RDB_CHECKSUM
+    server.stop_writes_on_bgsave_err = Conf.REDIS_DEFAULT_STOP_WRITES_ON_BGSAVE_ERROR
+    server.activerehashing = Conf.REDIS_DEFAULT_ACTIVE_REHASHING
+    server.notify_keyspace_events = 0
+    server.maxclients = Conf.REDIS_MAX_CLIENTS
+    server.bpop_blocked_clients = 0
+    server.maxmemory = Conf.REDIS_DEFAULT_MAXMEMORY
+    server.maxmemory_policy = Conf.REDIS_DEFAULT_MAXMEMORY_POLICY
+    server.maxmemory_samples = Conf.REDIS_DEFAULT_MAXMEMORY_SAMPLES
+    server.hash_max_ziplist_entries = Conf.REDIS_HASH_MAX_ZIPLIST_ENTRIES
+    server.hash_max_ziplist_value = Conf.REDIS_HASH_MAX_ZIPLIST_VALUE
+    server.list_max_ziplist_entries = Conf.REDIS_LIST_MAX_ZIPLIST_ENTRIES
+    server.list_max_ziplist_value = Conf.REDIS_LIST_MAX_ZIPLIST_VALUE
+    server.set_max_intset_entries = Conf.REDIS_SET_MAX_INTSET_ENTRIES
+    server.zset_max_ziplist_entries = Conf.REDIS_ZSET_MAX_ZIPLIST_ENTRIES
+    server.zset_max_ziplist_value = Conf.REDIS_ZSET_MAX_ZIPLIST_VALUE
+    server.hll_sparse_max_bytes = Conf.REDIS_DEFAULT_HLL_SPARSE_MAX_BYTES
+    server.shutdown_asap = 0
+    server.repl_ping_slave_period = Conf.REDIS_REPL_PING_SLAVE_PERIOD
+    server.repl_timeout = Conf.REDIS_REPL_TIMEOUT
+    server.repl_min_slaves_to_write = Conf.REDIS_DEFAULT_MIN_SLAVES_TO_WRITE
+    server.repl_min_slaves_max_lag = Conf.REDIS_DEFAULT_MIN_SLAVES_MAX_LAG
+    # server.cluster_enabled = 0
+    # server.cluster_node_timeout = Conf.REDIS_CLUSTER_DEFAULT_NODE_TIMEOUT
+    # server.cluster_migration_barrier = Conf.REDIS_CLUSTER_DEFAULT_MIGRATION_BARRIER
+    # server.cluster_configfile = Conf.REDIS_DEFAULT_CLUSTER_CONFIG_FILE
+    # server.lua_caller = NULL
+    # server.lua_time_limit = Conf.REDIS_LUA_TIME_LIMIT
+    # server.lua_client = NULL
+    # server.lua_timedout = 0
+    server.migrate_cached_sockets = {}
+    server.loading_process_events_interval_bytes = (1024*1024*2)
+
+    # 初始化 LRU 时间
+    server.lruclock = getLRUClock()
+
+    # 设置保存条件
+    server.saveparams.append(saveparam(60*60,1))
+    server.saveparams.append(saveparam(300,100))
+    server.saveparams.append(saveparam(60,10000))
+
+    # /* Double constants initialization */
+    # 初始化浮点常量
+    R_Zero = 0.0;
+    R_PosInf = 1.0/R_Zero;
+    R_NegInf = -1.0/R_Zero;
+    R_Nan = R_Zero/R_Zero;
+
+    # 初始化命令表
+    # 在这里初始化是因为接下来读取 .conf 文件时可能会用到这些命令
+    populateCommandTable();
+    # server.delCommand = lookupCommandByCString("del");
+    # server.multiCommand = lookupCommandByCString("multi");
+    # server.lpushCommand = lookupCommandByCString("lpush");
+    # server.lpopCommand = lookupCommandByCString("lpop");
+    # server.rpopCommand = lookupCommandByCString("rpop");
+
+    # /* Slow log */
+    # 初始化慢查询日志
+    server.slowlog_log_slower_than = Conf.REDIS_SLOWLOG_LOG_SLOWER_THAN;
+    server.slowlog_max_len = Conf.REDIS_SLOWLOG_MAX_LEN;
+
+    # /* Debugging */
+    # 初始化调试项
+    server.assert_failed = "<no assertion failed>"
+    server.assert_file = "<no file>"
+    server.assert_line = 0
+    server.bug_report_start = 0
+    server.watchdog_period = 0
 
 def initServer():
     # TODO(ruan.lj@foxmail.com): something to do.
     pass
 
 def initSentinelConfig():
-    # TODO(ruan.lj@foxmail.com): something to do.
     pass
 
 def initSentinel():
-    # TODO(ruan.lj@foxmail.com): something to do.
     pass
 
 def loadServerConfig(filename:str, options: dict) -> None:
@@ -507,6 +633,7 @@ def main():
     initServerConfig();
     # 如果服务器以 Sentinel 模式启动，那么进行 Sentinel 功能相关的初始化
     # 并为要监视的主服务器创建一些相应的数据结构
+    # NOTE: not support now
     if (server.sentinel_mode):
         initSentinelConfig()
         initSentinel()
