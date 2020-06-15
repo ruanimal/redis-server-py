@@ -44,6 +44,43 @@ class saveparam:
 def populateCommandTable():
     pass
 
+def getClientLimitClassByName(name: str) -> int:
+    mapping = {
+        "normal": REDIS_CLIENT_LIMIT_CLASS_NORMAL,
+        "slave": REDIS_CLIENT_LIMIT_CLASS_SLAVE,
+        "pubsub": REDIS_CLIENT_LIMIT_CLASS_PUBSUB,
+    }
+    return mapping.get(name, -1)
+
+def keyspaceEventsStringToFlags(classes: str) -> int:
+    flags = 0
+    for c in classes:
+        if c == 'A':
+            flags |= REDIS_NOTIFY_ALL
+        elif c == 'g':
+            flags |= REDIS_NOTIFY_GENERIC
+        elif c == '$':
+            flags |= REDIS_NOTIFY_STRING
+        elif c == 'l':
+            flags |= REDIS_NOTIFY_LIST
+        elif c == 's':
+            flags |= REDIS_NOTIFY_SET
+        elif c == 'h':
+            flags |= REDIS_NOTIFY_HASH
+        elif c == 'z':
+            flags |= REDIS_NOTIFY_ZSET
+        elif c == 'x':
+            flags |= REDIS_NOTIFY_EXPIRED
+        elif c == 'e':
+            flags |= REDIS_NOTIFY_EVICTED
+        elif c == 'K':
+            flags |= REDIS_NOTIFY_KEYSPACE
+        elif c == 'E':
+            flags |= REDIS_NOTIFY_KEYEVENT
+        else:
+            return -1
+    return flags
+
 class RedisServer(object):
     def __init__(self):
         self.configfile:str = ''  # 配置文件的绝对路径
@@ -71,7 +108,7 @@ class RedisServer(object):
         self.port: int = 0                       # /* TCP listening port */
         self.tcp_backlog: int = 0                # /* TCP listen() backlog */
         # 地址
-        self.bindaddr: str = ''     # /* Addresses we should bind to */
+        self.bindaddr: List[str] = []     # /* Addresses we should bind to */
         # 地址数量
         self.bindaddr_count: int = 0             # /* Number of addresses in server.bindaddr[] */
         # UNIX 套接字
@@ -213,7 +250,8 @@ class RedisServer(object):
         # 客户端输出缓冲区大小限制
         # 数组的元素有 REDIS_CLIENT_LIMIT_NUM_CLASSES 个
         # 每个代表一类客户端：普通、从服务器、pubsub，诸如此类
-        self.client_obuf_limits: List[clientBufferLimitsConfig] = []
+        self.client_obuf_limits: List[clientBufferLimitsConfig] = \
+            [clientBufferLimitsConfig() for _ in range(REDIS_CLIENT_LIMIT_NUM_CLASSES)]
 
         #  AOF persistence
         # AOF 状态（开启/关闭/可写）
@@ -407,17 +445,17 @@ def initServerConfig():
     server.ipfd_count = 0
     server.sofd = -1
     server.dbnum = Conf.REDIS_DEFAULT_DBNUM
-    server.verbosity = Conf.REDIS_DEFAULT_VERBOSITY
+    # server.verbosity = Conf.REDIS_DEFAULT_VERBOSITY
     server.maxidletime = Conf.REDIS_MAXIDLETIME
     server.tcpkeepalive = Conf.REDIS_DEFAULT_TCP_KEEPALIVE
     server.active_expire_enabled = 1
-    server.client_max_querybuf_len = Conf.REDIS_MAX_QUERYBUF_LEN
+    server.client_max_querybuf_len = REDIS_MAX_QUERYBUF_LEN
     server.saveparams = []
     server.loading = 0
     server.logfile = "";
     server.daemonize = Conf.REDIS_DEFAULT_DAEMONIZE
-    server.aof_state = Conf.REDIS_AOF_OFF
-    server.aof_fsync = Conf.REDIS_DEFAULT_AOF_FSYNC
+    server.aof_state = REDIS_AOF_OFF
+    server.aof_fsync = REDIS_DEFAULT_AOF_FSYNC
     server.aof_no_fsync_on_rewrite = Conf.REDIS_DEFAULT_AOF_NO_FSYNC_ON_REWRITE
     server.aof_rewrite_perc = Conf.REDIS_AOF_REWRITE_PERC
     server.aof_rewrite_min_size = Conf.REDIS_AOF_REWRITE_MIN_SIZE
@@ -426,7 +464,7 @@ def initServerConfig():
     server.aof_last_fsync = time.time()
     server.aof_rewrite_time_last = -1
     server.aof_rewrite_time_start = -1
-    server.aof_lastbgrewrite_status = Conf.REDIS_OK
+    server.aof_lastbgrewrite_status = REDIS_OK
     server.aof_delayed_fsync = 0
     server.aof_fd = -1
     server.aof_selected_db = -1   # /* Make sure the first time will not match */
@@ -443,17 +481,17 @@ def initServerConfig():
     server.notify_keyspace_events = 0
     server.maxclients = Conf.REDIS_MAX_CLIENTS
     server.bpop_blocked_clients = 0
-    server.maxmemory = Conf.REDIS_DEFAULT_MAXMEMORY
-    server.maxmemory_policy = Conf.REDIS_DEFAULT_MAXMEMORY_POLICY
-    server.maxmemory_samples = Conf.REDIS_DEFAULT_MAXMEMORY_SAMPLES
-    server.hash_max_ziplist_entries = Conf.REDIS_HASH_MAX_ZIPLIST_ENTRIES
-    server.hash_max_ziplist_value = Conf.REDIS_HASH_MAX_ZIPLIST_VALUE
-    server.list_max_ziplist_entries = Conf.REDIS_LIST_MAX_ZIPLIST_ENTRIES
-    server.list_max_ziplist_value = Conf.REDIS_LIST_MAX_ZIPLIST_VALUE
-    server.set_max_intset_entries = Conf.REDIS_SET_MAX_INTSET_ENTRIES
-    server.zset_max_ziplist_entries = Conf.REDIS_ZSET_MAX_ZIPLIST_ENTRIES
-    server.zset_max_ziplist_value = Conf.REDIS_ZSET_MAX_ZIPLIST_VALUE
-    server.hll_sparse_max_bytes = Conf.REDIS_DEFAULT_HLL_SPARSE_MAX_BYTES
+    # server.maxmemory = Conf.REDIS_DEFAULT_MAXMEMORY
+    # server.maxmemory_policy = REDIS_DEFAULT_MAXMEMORY_POLICY
+    # server.maxmemory_samples = Conf.REDIS_DEFAULT_MAXMEMORY_SAMPLES
+    server.hash_max_ziplist_entries = REDIS_HASH_MAX_ZIPLIST_ENTRIES
+    server.hash_max_ziplist_value = REDIS_HASH_MAX_ZIPLIST_VALUE
+    server.list_max_ziplist_entries = REDIS_LIST_MAX_ZIPLIST_ENTRIES
+    server.list_max_ziplist_value = REDIS_LIST_MAX_ZIPLIST_VALUE
+    server.set_max_intset_entries = REDIS_SET_MAX_INTSET_ENTRIES
+    server.zset_max_ziplist_entries = REDIS_ZSET_MAX_ZIPLIST_ENTRIES
+    server.zset_max_ziplist_value = REDIS_ZSET_MAX_ZIPLIST_VALUE
+    server.hll_sparse_max_bytes = REDIS_DEFAULT_HLL_SPARSE_MAX_BYTES
     server.shutdown_asap = 0
     server.repl_ping_slave_period = Conf.REDIS_REPL_PING_SLAVE_PERIOD
     server.repl_timeout = Conf.REDIS_REPL_TIMEOUT
@@ -519,7 +557,8 @@ def initSentinel():
 
 def loadServerConfig(filename:str, options: dict) -> None:
     from collections import OrderedDict
-    config = OrderedDict()
+    from itertools import chain
+    config_list = []
     if filename:
         with open(filename) as fp:
             for line in fp:
@@ -531,11 +570,115 @@ def loadServerConfig(filename:str, options: dict) -> None:
                     print('wrong config line {!r}'.format(line))
                     continue
                 key, val = parts
-                config[key.lower()] = val.strip('"')
-    for key, val in options.items():
-        config[key] = val
-    print(config)
-    # TODO(ruan.lj@foxmail.com): set configs to server.
+                config_list.append((key.lower(), val.strip('"')))
+
+    for key, val in chain(config_list, options.items()):
+        if key == 'timeout':
+            server.maxidletime = int(val)
+        elif key == 'tcp-keepalive':
+            server.tcpkeepalive = int(val)
+        elif key == 'port':
+            server.port = int(val)
+        elif key == 'tcp-backlog':
+            server.tcp_backlog = int(val)
+        elif key == 'bind':
+            server.bindaddr = val.split()
+            assert len(server.bindaddr) < Conf.REDIS_BINDADDR_MAX
+        elif key == 'unixsocket':
+            server.unixsocket = val
+        elif key == 'unixsocketperm':
+            server.unixsocketperm = int(val)
+        elif key == 'save':
+            if val == '':
+                server.saveparams = []
+            else:
+                args = val.split()
+                server.saveparams.append(saveparam(int(args[0], int(args[1]))))
+        elif key == 'dir':
+            os.chdir(val)
+        elif key == 'databases':
+            server.dbnum = int(val)
+        elif key == 'include':
+            loadServerConfig(val, {})
+        elif key == 'maxclients':
+            server.maxclients = int(val)
+        elif key == 'rdbcompression':
+            server.rdb_compression = int(val)
+        elif key == 'rdbchecksum':
+            server.rdb_checksum = int(val)
+        elif key == 'activerehashing':
+            server.activerehashing = int(val)
+        elif key == 'daemonize':
+            server.daemonize = int(val)
+        elif key == 'hz':
+            server.hz = int(val)
+            server.hz = min(server.hz, Conf.REDIS_MIN_HZ)
+            server.hz = max(server.hz, Conf.REDIS_MAX_HZ)
+        elif key == 'appendonly':
+            server.aof_state = int(val) and REDIS_AOF_ON or REDIS_AOF_OFF
+        elif key == 'appendfilename':
+            p = os.path.abspath(val)
+            os.makedirs(p)
+            server.aof_filename = p
+        elif key == 'no-appendfsync-on-rewrite':
+            server.aof_no_fsync_on_rewrite = int(val)
+        elif key == 'appendfsync':
+            if val == 'no':
+                server.aof_fsync = AOF_FSYNC_NO
+            elif val == 'always':
+                server.aof_fsync = AOF_FSYNC_ALWAYS
+            elif val == 'everysec':
+                server.aof_fsync = AOF_FSYNC_EVERYSEC
+            else:
+                raise ValueError(val)
+        elif key == 'auto-aof-rewrite-percentage':
+            server.aof_rewrite_perc = int(val)
+            assert server.aof_rewrite_perc >= 0
+        elif key == 'auto-aof-rewrite-min-size':
+            server.aof_rewrite_min_size = int(val)
+        elif key == 'aof-rewrite-incremental-fsync':
+            server.aof_rewrite_incremental_fsync = int(val)
+        elif key == 'requirepass':
+            assert len(val) < Conf.REDIS_AUTHPASS_MAX_LEN
+            server.requirepass = val
+        elif key == 'pidfile':
+            server.pidfile = os.path.abspath(val)
+        elif key == 'dbfilename':
+            server.rdb_filename = val
+        elif key == 'hash-max-ziplist-entries':
+            server.hash_max_ziplist_entries = int(val)
+        elif key == 'hash-max-ziplist-value':
+            server.hash_max_ziplist_value = int(val)
+        elif key == 'list-max-ziplist-entries':
+            server.list_max_ziplist_entries = int(val)
+        elif key == 'list-max-ziplist-value':
+            server.list_max_ziplist_value = int(val)
+        elif key == 'set-max-intset-entries':
+            server.set_max_intset_entries = int(val)
+        elif key == 'zset-max-ziplist-entries':
+            server.zset_max_ziplist_entries = int(val)
+        elif key == 'zset-max-ziplist-value':
+            server.zset_max_ziplist_value = int(val)
+        elif key == 'hll-sparse-max-bytes':
+            server.hll_sparse_max_bytes = int(val)
+        elif key == 'slowlog-log-slower-than':
+            server.slowlog_log_slower_than = int(val)
+        elif key == 'slowlog-max-len':
+            server.slowlog_max_len = int(val)
+        elif key == 'client-output-buffer-limit':
+            args = val.split()
+            assert len(args) == 4
+            c = getClientLimitClassByName(args[0])
+            hard, soft, seconds = [int(i) for i in args[1:4]]
+            server.client_obuf_limits[c].hard_limit_bytes = hard
+            server.client_obuf_limits[c].soft_limit_bytes = soft
+            server.client_obuf_limits[c].soft_limit_seconds = seconds
+        elif key == 'stop-writes-on-bgsave-error':
+            server.stop_writes_on_bgsave_err = int(val)
+        elif key == 'notify-keyspace-events':
+            server.notify_keyspace_events = keyspaceEventsStringToFlags(val)
+            assert server.notify_keyspace_events != -1
+
 
 def parse_server_args() -> Tuple[str, dict]:
     def handle_version(args):

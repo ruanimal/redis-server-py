@@ -49,9 +49,76 @@ BIG_ENDIAN = 4321	 # /* most-significant byte first (IBM, net) */
 PDP_ENDIAN = 3412	 # /* LSB first in word, MSW first in long (pdp)*/
 BYTE_ORDER = sys.byteorder
 
+###########
+
+REDIS_OK = 0
+REDIS_ERR = -1
+
 REDIS_LRU_BITS = 24
 REDIS_LRU_CLOCK_MAX = ((1<<REDIS_LRU_BITS)-1)   # /* Max value of obj->lru */
 REDIS_LRU_CLOCK_RESOLUTION = 1000   #  /* LRU clock resolution in ms */
+
+#/* Protocol and I/O related defines */
+REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024)   # /* 1GB max query buffer. */
+#define REDIS_IOBUF_LEN         (1024*16)  /* Generic I/O buffer size */
+#define REDIS_REPLY_CHUNK_BYTES (16*1024) /* 16k output buffer */
+#define REDIS_INLINE_MAX_SIZE   (1024*64) /* Max size of inline reads */
+#define REDIS_MBULK_BIG_ARG     (1024*32)
+#define REDIS_LONGSTR_SIZE      21          /* Bytes needed for long -> str */
+
+# /* AOF states */
+REDIS_AOF_OFF = 0       # /* AOF is off */
+REDIS_AOF_ON = 1        #  /* AOF is on */
+REDIS_AOF_WAIT_REWRITE = 2      # /* AOF waits rewrite to start appending */
+
+# /* Append only defines */
+AOF_FSYNC_NO = 0
+AOF_FSYNC_ALWAYS = 1
+AOF_FSYNC_EVERYSEC = 2
+REDIS_DEFAULT_AOF_FSYNC = AOF_FSYNC_EVERYSEC
+
+# /* Redis maxmemory strategies */
+REDIS_MAXMEMORY_VOLATILE_LRU = 0
+REDIS_MAXMEMORY_VOLATILE_TTL = 1
+REDIS_MAXMEMORY_VOLATILE_RANDOM = 2
+REDIS_MAXMEMORY_ALLKEYS_LRU = 3
+REDIS_MAXMEMORY_ALLKEYS_RANDOM = 4
+REDIS_MAXMEMORY_NO_EVICTION = 5
+REDIS_DEFAULT_MAXMEMORY_POLICY = REDIS_MAXMEMORY_NO_EVICTION
+
+# /* Zip structure related defaults */
+REDIS_HASH_MAX_ZIPLIST_ENTRIES = 512
+REDIS_HASH_MAX_ZIPLIST_VALUE = 64
+REDIS_LIST_MAX_ZIPLIST_ENTRIES = 512
+REDIS_LIST_MAX_ZIPLIST_VALUE = 64
+REDIS_SET_MAX_INTSET_ENTRIES = 512
+REDIS_ZSET_MAX_ZIPLIST_ENTRIES = 128
+REDIS_ZSET_MAX_ZIPLIST_VALUE = 64
+
+# /* HyperLogLog defines */
+REDIS_DEFAULT_HLL_SPARSE_MAX_BYTES = 3000
+
+# /* Client classes for client limits, currently used only for
+#  * the max-client-output-buffer limit implementation. */
+REDIS_CLIENT_LIMIT_CLASS_NORMAL = 0
+REDIS_CLIENT_LIMIT_CLASS_SLAVE = 1
+REDIS_CLIENT_LIMIT_CLASS_PUBSUB = 2
+REDIS_CLIENT_LIMIT_NUM_CLASSES = 3
+
+# /* Keyspace changes notification classes. Every class is associated with a
+#  * character for configuration purposes. */
+REDIS_NOTIFY_KEYSPACE = (1<<0)   # /* K */
+REDIS_NOTIFY_KEYEVENT = (1<<1)   # /* E */
+REDIS_NOTIFY_GENERIC = (1<<2)    # /* g */
+REDIS_NOTIFY_STRING = (1<<3)     # /* $ */
+REDIS_NOTIFY_LIST = (1<<4)       # /* l */
+REDIS_NOTIFY_SET = (1<<5)        # /* s */
+REDIS_NOTIFY_HASH = (1<<6)       # /* h */
+REDIS_NOTIFY_ZSET = (1<<7)       # /* z */
+REDIS_NOTIFY_EXPIRED = (1<<8)    # /* x */
+REDIS_NOTIFY_EVICTED = (1<<9)    # /* e */
+REDIS_NOTIFY_ALL = (REDIS_NOTIFY_GENERIC | REDIS_NOTIFY_STRING | REDIS_NOTIFY_LIST | REDIS_NOTIFY_SET | REDIS_NOTIFY_HASH | REDIS_NOTIFY_ZSET | REDIS_NOTIFY_EXPIRED | REDIS_NOTIFY_EVICTED)     # /* A */
+
 
 # /* 默认的服务器配置值 */
 class ServerConfig:
