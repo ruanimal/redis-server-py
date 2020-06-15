@@ -7,6 +7,9 @@ from .robject import redisObject, dictRedisObjectDestructor
 def dictSdsHash(key: sds) -> int:
     return dictGenHashFunction(key, sdslen(key))
 
+def dictObjHash(key: redisObject) -> int:
+    return dictGenHashFunction(key.ptr, sdslen(key.ptr))
+
 def dictSdsKeyCompare(privdata, key1: sds, key2: sds) -> int:
     from .sds import sdslen
     l1 = sdslen(key1)
@@ -26,6 +29,21 @@ dbDictType.keyCompare = dictSdsKeyCompare
 dbDictType.keyDestructor = dictSdsDestructor
 dbDictType.valDestructor = dictRedisObjectDestructor
 
+keyptrDictType = dictType()
+keyptrDictType.hashFunction = dictSdsHash
+keyptrDictType.keyDup = None
+keyptrDictType.valDup = None
+keyptrDictType.keyCompare = dictSdsKeyCompare
+keyptrDictType.keyDestructor = None
+keyptrDictType.valDestructor = None
+
+# keylistDictType = dictType()
+# keylistDictType.hashFunction = dictObjHash
+# keylistDictType.keyDup = None
+# keylistDictType.valDup = None
+# keylistDictType.keyCompare = dictSdsKeyCompare
+# keylistDictType.keyDestructor = None
+# keylistDictType.valDestructor = None
 
 class evictionPoolEntry:
     def __init__(self):

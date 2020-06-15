@@ -606,7 +606,7 @@ def initSentinelConfig():
 def initSentinel():
     pass
 
-def loadServerConfig(filename:str, options: dict) -> None:
+def loadServerConfig(filename: str, options: dict) -> None:
     from collections import OrderedDict
     from itertools import chain
     config_list = []
