@@ -359,6 +359,9 @@ class RedisServer(object):
         #  Additional command to propagate.
         self.also_propagate: redisOpArray = None
 
+        #  Limits
+        self.maxclients: int = 0
+
         #  Blocked clients
         #  Number of clients blocked by lists
         self.bpop_blocked_clients: int = 0
@@ -423,7 +426,7 @@ def checkForSentinelMode() -> int:
     return 0
 
 def getLRUClock() -> int:
-    return (int(time.time() * 1000) / REDIS_LRU_CLOCK_RESOLUTION) & REDIS_LRU_CLOCK_MAX
+    return int(int(time.time() * 1000) / REDIS_LRU_CLOCK_RESOLUTION) & REDIS_LRU_CLOCK_MAX
 
 def initServerConfig():
     import platform
