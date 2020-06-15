@@ -1,3 +1,4 @@
+from typing import List, Callable, Optional as Opt, Tuple
 from .sds import sdslen
 from .util import ll2string
 from .csix import ptr2long, strcoll, memcmp
@@ -33,7 +34,7 @@ class redisObject:
 robj = redisObject
 
 
-def decrRefCount(o) -> None:
+def decrRefCount(o: redisObject) -> None:
     assert o.refcount > 0
     if o.refcount == 1:
         # TODO: check need job or not
@@ -89,3 +90,8 @@ def equalStringObjects(a: robj, b: robj) -> bool:
 def sdsEncodedObject(obj: robj) -> int:
     return (obj.encoding == REDIS_ENCODING_RAW or \
         obj.encoding == REDIS_ENCODING_EMBSTR)
+
+def dictRedisObjectDestructor(privdata, val: Opt[redisObject]):
+    if not val:
+        return
+    decrRefCount(val)

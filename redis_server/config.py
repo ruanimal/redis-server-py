@@ -179,3 +179,8 @@ class ServerConfig:
     REDIS_PEER_ID_LEN = (REDIS_IP_STR_LEN+32)  # /* Must be enough for ip:port */
     REDIS_BINDADDR_MAX = 16
     REDIS_MIN_RESERVED_FDS = 32
+
+# /* When configuring the Redis eventloop, we setup it so that the total number
+#  * of file descriptors we can handle are server.maxclients + RESERVED_FDS + FDSET_INCR
+#  * that is our safety margin. */
+REDIS_EVENTLOOP_FDSET_INCR = (ServerConfig.REDIS_MIN_RESERVED_FDS+96)

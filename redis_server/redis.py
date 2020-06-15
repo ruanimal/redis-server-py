@@ -4,10 +4,12 @@ import time
 import logging
 import os
 import uuid
+import socket
 from typing import List, Callable, Optional as Opt, Tuple
 from dataclasses import dataclass
 from .csix import timeval
 from .ae import aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop
+from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer
 from .config import ServerConfig as Conf
 from .config import *
 
@@ -110,14 +112,14 @@ class RedisServer(object):
         # 地址
         self.bindaddr: List[str] = []     # /* Addresses we should bind to */
         # 地址数量
-        self.bindaddr_count: int = 0             # /* Number of addresses in server.bindaddr[] */
+        # self.bindaddr_count: int = 0             # /* Number of addresses in server.bindaddr[] */
         # UNIX 套接字
         self.unixsocket: str = ''               # /* UNIX socket path */
         self.unixsocketperm: int = 0          # /* UNIX socket permission */
         # 描述符
-        self.ipfd: List[int] = []    # /* TCP socket file descriptors */
+        self.ipfd: List[socket.socket] = []    # /* TCP socket file descriptors */
         # 描述符数量
-        self.ipfd_count: int = 0                 # /* Used slots in ipfd[] */
+        # self.ipfd_count: int = 0                 # /* Used slots in ipfd[] */
         # UNIX 套接字文件描述符
         self.sofd: int = 0                       # /* Unix socket file descriptor */
         self.cfd: List[int] = []    # /* Cluster bus listening socket */
@@ -141,7 +143,7 @@ class RedisServer(object):
         self.daemonize: int = 0   # /* True if running as a daemon */
         self.cluster_enabled: int = 0
         self.port: int = 0
-        self.ipfd_count: int = 0
+        # self.ipfd_count: int = 0
         self.sofd: int = 0
         self.unixsocket: str = ""
         #  RDB / AOF loading information
@@ -415,6 +417,14 @@ class RedisServer(object):
     def saveparamslen(self):
         return len(self.saveparams)
 
+    @property
+    def bindaddr_count(self):
+        return len(self.bindaddr)
+
+    @property
+    def ipfd_count(self):
+        return len(self.ipfd)
+
 server = RedisServer()
 
 def checkForSentinelMode() -> int:
@@ -445,7 +455,7 @@ def initServerConfig():
     server.bindaddr_count = 0
     server.unixsocket = ""
     server.unixsocketperm = Conf.REDIS_DEFAULT_UNIX_SOCKET_PERM
-    server.ipfd_count = 0
+    # server.ipfd_count = 0
     server.sofd = -1
     server.dbnum = Conf.REDIS_DEFAULT_DBNUM
     # server.verbosity = Conf.REDIS_DEFAULT_VERBOSITY
@@ -548,9 +558,47 @@ def initServerConfig():
     server.bug_report_start = 0
     server.watchdog_period = 0
 
+
+def listenToPort() -> int:
+    port = server.port
+    backlog = server.tcp_backlog
+    if not server.bindaddr:
+        s = anetTcp6Server(port, None, backlog)
+        anetNonBlock(s)
+        server.ipfd.append(s)
+        s = anetTcpServer(port, None, backlog)
+        anetNonBlock(s)
+        server.ipfd.append(s)
+    for addr in server.bindaddr:
+        if ':' in addr:
+            s = anetTcp6Server(port, addr, backlog)
+        else:
+            s = anetTcpServer(port, addr, backlog)
+        anetNonBlock(s)
+    return REDIS_OK
+
 def initServer():
-    # TODO(ruan.lj@foxmail.com): something to do.
-    pass
+    from .ae import aeCreateEventLoop
+    from .db import RedisDB
+    from .rdict import dictCreate
+    # // 设置信号处理函数
+    # signal(SIGHUP, SIG_IGN);
+    # signal(SIGPIPE, SIG_IGN);
+    # setupSignalHandlers();
+    server.el = aeCreateEventLoop(server.maxclients+REDIS_EVENTLOOP_FDSET_INCR)
+    server.db = [RedisDB() for _ in range(server.dbnum)]
+    listenToPort()
+    if server.unixsocket:
+        try:
+            os.unlink(server.unixsocket)
+        except OSError:
+            pass
+        server.sofd = anetUnixServer(server.unixsocket, server.unixsocketperm, server.tcp_backlog)
+        anetNonBlock(server.sofd)
+    assert server.ipfd_count > 0 or server.sofd
+    for i in range(server.dbnum):
+        # TODO(rlj): something to do.
+        pass
 
 def initSentinelConfig():
     pass

@@ -137,7 +137,7 @@ def anetListen(s: socket.socket, host: str, port: Opt[int], backlog: int) -> Non
         s.close()
         raise
 
-def _anetTcpServer(port: int, bindaddr: str, af: int, backlog: int) -> socket.socket:
+def _anetTcpServer(port: int, bindaddr: Opt[str], af: int, backlog: int) -> socket.socket:
     serverinfo = socket.getaddrinfo(bindaddr, port, af, socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
     s = None
     for (family, type_, proto, _, sockaddr) in serverinfo:
@@ -153,10 +153,10 @@ def _anetTcpServer(port: int, bindaddr: str, af: int, backlog: int) -> socket.so
         raise AnetErr('start tcp server fail')
     return s
 
-def anetTcpServer(port: int, bindaddr: str, backlog: int) -> socket.socket:
+def anetTcpServer(port: int, bindaddr: Opt[str], backlog: int) -> socket.socket:
     return _anetTcpServer(port, bindaddr, socket.AF_INET, backlog)
 
-def anetTcp6Server(port: int, bindaddr: str, backlog: int) -> socket.socket:
+def anetTcp6Server(port: int, bindaddr: Opt[str], backlog: int) -> socket.socket:
     return _anetTcpServer(port, bindaddr, socket.AF_INET6, backlog)
 
 def anetCreateSocket(domain: int) -> socket.socket:
