@@ -22,16 +22,16 @@ def dictSdsKeyCompare(privdata, key1: sds, key2: sds) -> int:
 def dictSdsDestructor(privdata, val):
     pass
 
-def dictObjKeyCompare():
+def dictObjKeyCompare(*args):
     pass
 
-def dictListDestructor():
+def dictListDestructor(*args):
     pass
 
-def dictEncObjHash():
+def dictEncObjHash(*args):
     pass
 
-def dictEncObjKeyCompare():
+def dictEncObjKeyCompare(*args):
     pass
 
 dbDictType = dictType()

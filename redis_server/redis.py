@@ -456,7 +456,6 @@ def initServerConfig():
     # 设置默认服务器端口号
     server.port = Conf.REDIS_SERVERPORT
     server.tcp_backlog = Conf.REDIS_TCP_BACKLOG
-    server.bindaddr_count = 0
     server.unixsocket = ""
     server.unixsocketperm = Conf.REDIS_DEFAULT_UNIX_SOCKET_PERM
     # server.ipfd_count = 0
@@ -533,13 +532,6 @@ def initServerConfig():
     server.saveparams.append(saveparam(300,100))
     server.saveparams.append(saveparam(60,10000))
 
-    # /* Double constants initialization */
-    # 初始化浮点常量
-    R_Zero = 0.0;
-    R_PosInf = 1.0/R_Zero;
-    R_NegInf = -1.0/R_Zero;
-    R_Nan = R_Zero/R_Zero;
-
     # 初始化命令表
     # 在这里初始化是因为接下来读取 .conf 文件时可能会用到这些命令
     populateCommandTable();
@@ -567,12 +559,15 @@ def listenToPort() -> int:
     port = server.port
     backlog = server.tcp_backlog
     if not server.bindaddr:
-        s = anetTcp6Server(port, None, backlog)
-        anetNonBlock(s)
-        server.ipfd.append(s)
-        s = anetTcpServer(port, None, backlog)
-        anetNonBlock(s)
-        server.ipfd.append(s)
+        try:
+            s = anetTcp6Server(port, None, backlog)
+            anetNonBlock(s)
+            server.ipfd.append(s)
+        except OSError:
+            pass
+            s = anetTcpServer(port, None, backlog)
+            anetNonBlock(s)
+            server.ipfd.append(s)
     for addr in server.bindaddr:
         if ':' in addr:
             s = anetTcp6Server(port, addr, backlog)
@@ -670,10 +665,10 @@ def initServer():
         logger.error("Can't create the serverCron time event.")
         exit(1)
     for fd in server.ipfd:
-        if aeCreateFileEvent(server.el, fd, AE_READABLE, acceptTcpHandler, None) == AE_ERR:
+        if aeCreateFileEvent(server.el, fd.fileno(), AE_READABLE, acceptTcpHandler, None) == AE_ERR:
             logger.error("Unrecoverable error creating server.ipfd file event.")
             exit(1)
-    if server.sofd and aeCreateFileEvent(server.el, server.sofd, AE_READABLE, acceptUnixHandler, None) == AE_ERR:
+    if server.sofd and aeCreateFileEvent(server.el, server.sofd.fileno(), AE_READABLE, acceptUnixHandler, None) == AE_ERR:
         logger.error("Unrecoverable error creating server.sofd file event.")
         exit(1)
     if server.aof_state == REDIS_AOF_ON:
@@ -898,8 +893,8 @@ def beforeSleep(eventLoop: aeEventLoop) -> None:
 
 
 def main():
-    from .rdict import dictSetHashFunctionSeed
 
+    from .rdict import dictSetHashFunctionSeed
     locale.setlocale(locale.LC_COLLATE, '')
     random.seed(int(time.time()) ^ os.getpid())
     tv = timeval.from_datetime()
@@ -908,6 +903,7 @@ def main():
     server.sentinel_mode = checkForSentinelMode();
     # 初始化服务器
     initServerConfig();
+    parse_server_args()
     # 如果服务器以 Sentinel 模式启动，那么进行 Sentinel 功能相关的初始化
     # 并为要监视的主服务器创建一些相应的数据结构
     # NOTE: not support now
@@ -916,13 +912,15 @@ def main():
         initSentinel()
     if (server.daemonize):
         daemonize()
+
+    initServer()
     # 为服务器进程设置名字
     # NOTE: not support now
     # redisSetProcTitle(argv[0]);
 
     redisAsciiArt()
     if not server.sentinel_mode:
-        logger.warn("Server started, Redis version %s", __version__)
+        logger.warning("Server started, Redis version %s", __version__)
         loadDataFromDisk()
         # NOTE: not support cluster mode.
         if server.ipfd_count > 0:
@@ -937,5 +935,7 @@ def main():
     return 0
 
 if __name__ == '__main__':
-    parse_server_args()
+    # parse_server_args()
     # redisAsciiArt()
+    # import ipdb; ipdb.set_trace()
+    main()

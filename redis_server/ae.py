@@ -1,6 +1,7 @@
-from typing import List, Callable, Optional as Opt, Tuple
+from typing import List, Callable, Optional as Opt, Tuple, Union
 import select
 import time
+import socket
 from datetime import datetime, timedelta
 from collections import namedtuple
 from .csix import cstr, timeval
@@ -285,7 +286,7 @@ def aeWait(fd: int, mask: int, milliseconds: int) -> int:
 
 def aeMain(eventLoop: aeEventLoop) -> None:
     eventLoop.stop = 0
-    while eventLoop.stop:
+    while not eventLoop.stop:
         if eventLoop.beforesleep:
             eventLoop.beforesleep(eventLoop)
         aeProcessEvents(eventLoop, AE_ALL_EVENTS)

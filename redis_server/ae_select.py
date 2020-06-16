@@ -10,7 +10,9 @@ __all__ = (
 
 import select
 import typing
-from typing import Optional as Opt, List
+import socket
+from typing import Optional as Opt, List, Union
+
 
 if typing.TYPE_CHECKING:
     from .ae import aeEventLoop, timeval
@@ -58,7 +60,7 @@ def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
     numevents = 0
     state: aeApiState = eventLoop.apidata
 
-    timeout = tvp.time()
+    timeout = tvp.time
     _rfds, _wfds, _ = select.select(state.rfds, state.wfds, [], timeout)
     if _rfds or _wfds:
         for j in range(eventLoop.maxfd):

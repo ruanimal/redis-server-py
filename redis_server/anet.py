@@ -1,7 +1,7 @@
 import os
 import sys
 import socket
-from typing import NewType, Tuple, Optional as Opt
+from typing import NewType, Tuple, Optional as Opt, Union
 from .csix import *
 
 Address = Tuple[str, int]
