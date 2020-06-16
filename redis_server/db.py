@@ -3,6 +3,7 @@ from .rdict import rDict, dictGenHashFunction, dictType
 from .sds import sds, sdslen
 from .csix import memcmp
 from .robject import redisObject, dictRedisObjectDestructor
+from .rdict import dictCreate
 
 def dictSdsHash(key: sds) -> int:
     return dictGenHashFunction(key, sdslen(key))
@@ -21,6 +22,18 @@ def dictSdsKeyCompare(privdata, key1: sds, key2: sds) -> int:
 def dictSdsDestructor(privdata, val):
     pass
 
+def dictObjKeyCompare():
+    pass
+
+def dictListDestructor():
+    pass
+
+def dictEncObjHash():
+    pass
+
+def dictEncObjKeyCompare():
+    pass
+
 dbDictType = dictType()
 dbDictType.hashFunction = dictSdsHash
 dbDictType.keyDup = None
@@ -37,18 +50,30 @@ keyptrDictType.keyCompare = dictSdsKeyCompare
 keyptrDictType.keyDestructor = None
 keyptrDictType.valDestructor = None
 
-# keylistDictType = dictType()
-# keylistDictType.hashFunction = dictObjHash
-# keylistDictType.keyDup = None
-# keylistDictType.valDup = None
-# keylistDictType.keyCompare = dictSdsKeyCompare
-# keylistDictType.keyDestructor = None
-# keylistDictType.valDestructor = None
+keylistDictType = dictType()
+keylistDictType.hashFunction = dictObjHash
+keylistDictType.keyDup = None
+keylistDictType.valDup = None
+keylistDictType.keyCompare = dictObjKeyCompare
+keylistDictType.keyDestructor = dictRedisObjectDestructor
+keylistDictType.valDestructor = dictListDestructor
 
+setDictType = dictType()
+setDictType.hashFunction = dictEncObjHash
+setDictType.keyDup = None
+setDictType.valDup = None
+setDictType.keyCompare = dictEncObjKeyCompare
+setDictType.keyDestructor = dictRedisObjectDestructor
+setDictType.valDestructor = None
+
+REDIS_EVICTION_POOL_SIZE = 16
 class evictionPoolEntry:
     def __init__(self):
         self.idle: int = 0
         self.key: sds = None
+
+def evictionPoolAlloc() -> List[evictionPoolEntry]:
+    return [evictionPoolEntry() for _ in range(REDIS_EVICTION_POOL_SIZE)]
 
 class RedisDB:
     def __init__(self):

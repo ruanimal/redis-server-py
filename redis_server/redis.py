@@ -12,6 +12,8 @@ from .ae import aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop
 from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer
 from .config import ServerConfig as Conf
 from .config import *
+from .adlist import rList, listCreate
+from .rdict import rDict, dictCreate
 
 __version__ = '0.0.1'
 
@@ -85,9 +87,10 @@ def keyspaceEventsStringToFlags(classes: str) -> int:
 
 class RedisServer(object):
     def __init__(self):
+        from .db import RedisDB
         self.configfile:str = ''  # 配置文件的绝对路径
         self.hz:int = 0      # serverCron() 每秒调用的次数
-        self.db: List['RedisDB'] = []
+        self.db: List[RedisDB] = []
         self.commands: dict = {}   # 命令表（受到 rename 配置选项的作用）
         self.orig_commands: dict = {}   # 命令表（无 rename 配置选项的作用）
         self.el: aeEventLoop = None   # 事件状态
@@ -395,10 +398,10 @@ class RedisServer(object):
         # 链表中保存了所有订阅某个频道的客户端
         # 新客户端总是被添加到链表的表尾
         #  Map channels to list of subscribed clients
-        self.pubsub_channels: dict = {}
+        self.pubsub_channels: rDict = None
         # 这个链表记录了客户端订阅的所有模式的名字
         #  A list of pubsub_patterns
-        self.pubsub_patterns: List = []
+        self.pubsub_patterns: List = None
         self.notify_keyspace_events: int = 0
         #  Events to propagate via Pub/Sub. This is anxor of REDIS_NOTIFY... flags.
         #  Cluster
@@ -577,10 +580,39 @@ def listenToPort() -> int:
         anetNonBlock(s)
     return REDIS_OK
 
+def resetServerStats():
+    server.stat_numcommands = 0
+    server.stat_numconnections = 0
+    server.stat_expiredkeys = 0
+    server.stat_evictedkeys = 0
+    server.stat_keyspace_misses = 0
+    server.stat_keyspace_hits = 0
+    server.stat_fork_time = 0
+    server.stat_rejected_conn = 0
+    server.stat_sync_full = 0
+    server.stat_sync_partial_ok = 0
+    server.stat_sync_partial_err = 0
+    server.ops_sec_samples = [0 for _ in range(Conf.REDIS_OPS_SEC_SAMPLES)]
+    server.ops_sec_idx = 0
+    server.ops_sec_last_sample_time = int(time.time() * 1000)
+    server.ops_sec_last_sample_ops = 0
+
+def updateCachedTime():
+    server.unixtime = int(time.time())
+    server.mstime = int(time.time() * 1000)
+
+def serverCron(*args):
+    pass
+
 def initServer():
-    from .ae import aeCreateEventLoop
+    from .ae import aeCreateEventLoop, aeCreateTimeEvent, AE_ERR
     from .db import RedisDB
     from .rdict import dictCreate
+    from .db import dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
+    from .adlist import listCreate
+    from .pubsub import freePubsubPattern, listMatchPubsubPattern
+    from .sds import sdsempty
+    from .aof import aofRewriteBufferReset
     # // 设置信号处理函数
     # signal(SIGHUP, SIG_IGN);
     # signal(SIGPIPE, SIG_IGN);
@@ -597,8 +629,45 @@ def initServer():
         anetNonBlock(server.sofd)
     assert server.ipfd_count > 0 or server.sofd
     for i in range(server.dbnum):
-        # TODO(rlj): something to do.
-        pass
+        server.db[i].dict = dictCreate(dbDictType, None)
+        server.db[i].expires = dictCreate(keyptrDictType, None)
+        server.db[i].blocking_keys = dictCreate(keylistDictType, None)
+        server.db[i].ready_keys = dictCreate(setDictType, None)
+        server.db[i].watched_keys = dictCreate(keylistDictType, None)
+        server.db[i].eviction_pool = evictionPoolAlloc()
+        server.db[i].id = i
+        server.db[i].avg_ttl = 0
+
+    server.pubsub_channels = dictCreate(keylistDictType, None)
+    server.pubsub_patterns = listCreate()
+    server.pubsub_patterns.free = freePubsubPattern
+    server.pubsub_patterns.match = listMatchPubsubPattern
+
+    server.cronloops = 0
+    server.rdb_child_pid = -1
+    server.aof_child_pid = -1
+    aofRewriteBufferReset()
+    server.aof_buf = sdsempty()
+    server.lastsave = int(time.time())
+    server.lastbgsave_try = 0
+    server.rdb_save_time_last = -1
+    server.rdb_save_time_start = -1
+    server.dirty = 0
+    resetServerStats()
+    # /* A few stats we don't want to reset: server startup time, and peak mem. */
+    server.stat_starttime = int(time.time())
+    server.stat_peak_memory = 0
+    server.resident_set_size = 0
+    server.lastbgsave_status = REDIS_OK
+    server.aof_last_write_status = REDIS_OK
+    server.aof_last_write_errno = 0
+    server.repl_good_slaves_count = 0
+    updateCachedTime()
+
+    if aeCreateTimeEvent(server.el, 1, serverCron, None, None) == AE_ERR:
+        logger.error("Can't create the serverCron time event.")
+        exit(1)
+
 
 def initSentinelConfig():
     pass
