@@ -88,6 +88,7 @@ def keyspaceEventsStringToFlags(classes: str) -> int:
 class RedisServer(object):
     def __init__(self):
         from .db import RedisDB
+        from io import BufferedWriter
         self.configfile:str = ''  # 配置文件的绝对路径
         self.hz:int = 0      # serverCron() 每秒调用的次数
         self.db: List[RedisDB] = []
@@ -124,7 +125,7 @@ class RedisServer(object):
         # 描述符数量
         # self.ipfd_count: int = 0                 # /* Used slots in ipfd[] */
         # UNIX 套接字文件描述符
-        self.sofd: int = 0                       # /* Unix socket file descriptor */
+        self.sofd: socket.socket = None                       # /* Unix socket file descriptor */
         self.cfd: List[int] = []    # /* Cluster bus listening socket */
         self.cfd_count = 0                  # /* Used slots in cfd[] */
         # 一个链表，保存了所有客户端状态结构
@@ -292,7 +293,7 @@ class RedisServer(object):
         self.aof_buf = None   # TODO(ruan.lj@foxmail.com): sds or bytearry.
         # AOF 文件的描述符
         #  File descriptor of currently selected AOF file
-        self.aof_fd: int = 0
+        self.aof_fd: BufferedWriter = None
         # AOF 的当前目标数据库
         #  Currently selected DB in AOF
         self.aof_selected_db: int = 0
@@ -459,7 +460,7 @@ def initServerConfig():
     server.unixsocket = ""
     server.unixsocketperm = Conf.REDIS_DEFAULT_UNIX_SOCKET_PERM
     # server.ipfd_count = 0
-    server.sofd = -1
+    server.sofd = None
     server.dbnum = Conf.REDIS_DEFAULT_DBNUM
     # server.verbosity = Conf.REDIS_DEFAULT_VERBOSITY
     server.maxidletime = Conf.REDIS_MAXIDLETIME
@@ -482,7 +483,7 @@ def initServerConfig():
     server.aof_rewrite_time_start = -1
     server.aof_lastbgrewrite_status = REDIS_OK
     server.aof_delayed_fsync = 0
-    server.aof_fd = -1
+    # server.aof_fd = None
     server.aof_selected_db = -1   # /* Make sure the first time will not match */
     server.aof_flush_postponed_start = 0
     server.aof_rewrite_incremental_fsync = Conf.REDIS_DEFAULT_AOF_REWRITE_INCREMENTAL_FSYNC
@@ -605,7 +606,7 @@ def serverCron(*args):
     pass
 
 def initServer():
-    from .ae import aeCreateEventLoop, aeCreateTimeEvent, AE_ERR
+    from .ae import aeCreateEventLoop, aeCreateTimeEvent, aeCreateFileEvent, AE_ERR, AE_READABLE
     from .db import RedisDB
     from .rdict import dictCreate
     from .db import dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
@@ -613,6 +614,7 @@ def initServer():
     from .pubsub import freePubsubPattern, listMatchPubsubPattern
     from .sds import sdsempty
     from .aof import aofRewriteBufferReset
+    from .networking import acceptTcpHandler, acceptUnixHandler
     # // 设置信号处理函数
     # signal(SIGHUP, SIG_IGN);
     # signal(SIGPIPE, SIG_IGN);
@@ -667,7 +669,19 @@ def initServer():
     if aeCreateTimeEvent(server.el, 1, serverCron, None, None) == AE_ERR:
         logger.error("Can't create the serverCron time event.")
         exit(1)
-
+    for fd in server.ipfd:
+        if aeCreateFileEvent(server.el, fd, AE_READABLE, acceptTcpHandler, None) == AE_ERR:
+            logger.error("Unrecoverable error creating server.ipfd file event.")
+            exit(1)
+    if server.sofd and aeCreateFileEvent(server.el, server.sofd, AE_READABLE, acceptUnixHandler, None) == AE_ERR:
+        logger.error("Unrecoverable error creating server.sofd file event.")
+        exit(1)
+    if server.aof_state == REDIS_AOF_ON:
+        server.aof_fd = open(server.aof_filename, 'ab')
+        os.chmod(server.aof_filename, 0o644)
+    # NOTE: 暂时不对内存做限制
+    # NOTE: 暂时不支持slowlog
+    # NOTE: 暂时不支持bio
 
 def initSentinelConfig():
     pass
@@ -913,7 +927,7 @@ def main():
         # NOTE: not support cluster mode.
         if server.ipfd_count > 0:
             logger.info("The server is now ready to accept connections on port %s", server.port)
-        if server.sofd > 0:
+        if server.sofd:
             logger.info("The server is now ready to accept connections at %s", server.unixsocket)
     else:
         raise NotImplementedError('Not support sentinel_mode yet')
