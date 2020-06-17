@@ -127,6 +127,19 @@ REDIS_INLINE_MAX_SIZE =   (1024*64)     # /* Max size of inline reads */
 REDIS_MBULK_BIG_ARG =     (1024*32)
 REDIS_LONGSTR_SIZE =      21            # /* Bytes needed for long -> str */
 
+# /* Slave replication state - from the point of view of the slave. */
+REDIS_REPL_NONE = 0     # /* No active replication */
+REDIS_REPL_CONNECT = 1      # /* Must connect to master */
+REDIS_REPL_CONNECTING = 2       # /* Connecting to master */
+REDIS_REPL_RECEIVE_PONG = 3     # /* Wait for PING reply */
+REDIS_REPL_TRANSFER = 4     # /* Receiving .rdb from master */
+REDIS_REPL_CONNECTED = 5    # /* Connected to master */
+
+# /* Client block type (btype field in client structure)
+#  * if REDIS_BLOCKED flag is set. */
+REDIS_BLOCKED_NONE = 0   # /* Not blocked, no REDIS_BLOCKED flag set. */
+REDIS_BLOCKED_LIST = 1   # /* BLPOP & co. */
+REDIS_BLOCKED_WAIT = 2   # /* WAIT for synchronous replication. */
 
 # /* 默认的服务器配置值 */
 class ServerConfig:

@@ -8,14 +8,18 @@ import socket
 from typing import List, Callable, Optional as Opt, Tuple
 from dataclasses import dataclass
 from .csix import timeval
-from .ae import aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop
-from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer
+from .ae import (
+    aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop,
+    aeCreateTimeEvent, aeCreateFileEvent, AE_ERR, AE_READABLE,
+)
+from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer, anetEnableTcpNoDelay, anetKeepAlive
 from .config import ServerConfig as Conf
 from .config import *
-from .adlist import rList, listCreate
+from .adlist import rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod
 from .rdict import rDict, dictCreate
 from .sds import sds, sdsempty
-from .robject import redisObject
+from .robject import redisObject, decrRefCountVoid
+from .db import RedisDB, dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
 
 
 __version__ = '0.0.1'
@@ -119,7 +123,7 @@ class RedisClient(object):
         # // 阻塞类型
         self.btype: int = 0
         # // 阻塞状态
-        self.bpop: blockingState = None
+        self.bpop: blockingState = blockingState()
         # // 最后被写入的全局复制偏移量
         self.woff: int = 0
         # // 被监视的键
@@ -139,6 +143,54 @@ class RedisClient(object):
         # // 回复缓冲区
         self.buf: bytearray = bytearray(REDIS_REPLY_CHUNK_BYTES)
 
+def selectDb(c: RedisClient, idx: int):
+    raise NotImplementedError
+
+def createClient(fd: Opt[socket.socket]) -> Opt[RedisClient]:
+    from .networking import readQueryFromClient, dupClientReplyValue, listMatchObjects
+    from .multi import initClientMultiState
+
+    c = RedisClient()
+    if fd:
+        anetNonBlock(fd)
+        anetEnableTcpNoDelay(fd)
+        if server.tcpkeepalive:
+            anetKeepAlive(fd, server.tcpkeepalive)
+        if (aeCreateFileEvent(server.el, fd, AE_READABLE, readQueryFromClient, c) == AE_ERR):
+            fd.close()
+            return None
+
+    # 默认数据库
+    selectDb(c, 0)
+    c.fd = fd
+    c.bulklen = -1
+    # // 创建时间和最后一次互动时间
+    c.ctime = c.lastinteraction = server.unixtime
+    # // 复制状态
+    c.replstate = REDIS_REPL_NONE
+    # // 回复链表
+    c.reply = listCreate()
+    listSetFreeMethod(c.reply, decrRefCountVoid)
+    listSetDupMethod(c.reply, dupClientReplyValue)
+    # // 阻塞类型
+    c.btype = REDIS_BLOCKED_NONE
+    # // 造成客户端阻塞的列表键
+    c.bpop.keys = dictCreate(setDictType, None)
+    # // 在解除阻塞时将元素推入到 target 指定的键中
+    # // BRPOPLPUSH 命令时使用
+    # // 进行事务时监视的键
+    c.watched_keys = listCreate()
+    # // 订阅的频道和模式
+    c.pubsub_channels = dictCreate(setDictType, None)
+    c.pubsub_patterns = listCreate()
+    listSetFreeMethod(c.pubsub_patterns, decrRefCountVoid)
+    listSetMatchMethod(c.pubsub_patterns, listMatchObjects)
+    # // 如果不是伪客户端，那么添加到服务器的客户端链表中
+    if fd:
+        server.clients.append(c)
+    # // 初始化客户端的事务状态
+    initClientMultiState(c);
+    return c;
 
 class redisCommand(object):
     pass
@@ -719,10 +771,7 @@ def serverCron(*args):
     pass
 
 def initServer():
-    from .ae import aeCreateEventLoop, aeCreateTimeEvent, aeCreateFileEvent, AE_ERR, AE_READABLE
-    from .db import RedisDB
     from .rdict import dictCreate
-    from .db import dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
     from .adlist import listCreate
     from .pubsub import freePubsubPattern, listMatchPubsubPattern
     from .aof import aofRewriteBufferReset

@@ -42,6 +42,13 @@ def decrRefCount(o: redisObject) -> None:
     else:
         o.refcount -= 1
 
+def incrRefCount(o: redisObject) -> None:
+    o.refcount += 1
+
+
+def decrRefCountVoid(o: redisObject) -> None:
+    decrRefCount(o)
+
 REDIS_COMPARE_BINARY = (1<<0)
 REDIS_COMPARE_COLL = (1<<1)
 
