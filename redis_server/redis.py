@@ -14,13 +14,131 @@ from .config import ServerConfig as Conf
 from .config import *
 from .adlist import rList, listCreate
 from .rdict import rDict, dictCreate
+from .sds import sds, sdsempty
+from .robject import redisObject
+
 
 __version__ = '0.0.1'
 
 logger = logging.getLogger(__name__)
 
+class multiCmd:
+    def __init__(self):
+        self.argv: List[redisObject] = []
+        self.cmd: redisCommand = None
+
+    @property
+    def argc(self):
+        return len(self.argv)
+
+class multiState:
+    def __init__(self):
+        self.commands: List[multiCmd] = []
+        self.count: int = 0
+        self.minreplicas: int = 0
+        self.minreplicas_timeout: int = 0
+
+class blockingState:
+    def __init__(self):
+        self.timeout: int = 0
+        self.keys: rDict = None
+        self.target: redisObject = None
+        # // 等待 ACK 的复制节点数量
+        self.numreplicas: int = 0
+        # // 复制偏移量
+        self.reploffset: int = 0
+
 class RedisClient(object):
-    pass
+    def __init__(self):
+        from .db import RedisDB
+        # // 套接字描述符
+        self.fd: socket.socket = None
+        # // 当前正在使用的数据库
+        self.db: RedisDB = None
+        # // 当前正在使用的数据库的 id （号码）
+        self.dictid: int = 0
+        # // 客户端的名字
+        self.name: redisObject = None
+        # // 查询缓冲区
+        self.querybuf: sds = None
+        # // 查询缓冲区长度峰值
+        self.querybuf_peak: int = 0   # /* Recent (100ms or more) peak of querybuf size */
+        # // 参数数量
+        # int argc;
+        # // 参数对象数组
+        self.argv: List[redisObject] = []
+        # // 记录被客户端执行的命令
+        self.cmd: redisCommand = None
+        self.lastcmd: redisCommand = None
+        # // 请求的类型：内联命令还是多条命令
+        self.reqtype: int = 0
+        # // 剩余未读取的命令内容数量
+        self.multibulklen: int = 0
+        # // 命令内容的长度
+        self.bulklen: int = 0
+        # // 回复链表
+        self.reply: rList = None
+        # // 回复链表中对象的总大小
+        self.reply_bytes: int = 0
+        # // 已发送字节，处理 short write 用
+        self.sentlen: int
+        # // 创建客户端的时间
+        self.ctime: int = 0
+        # // 客户端最后一次和服务器互动的时间
+        self.lastinteraction: int = 0
+        # // 客户端的输出缓冲区超过软性限制的时间
+        self.obuf_soft_limit_reached_time: int = 0
+        # // 客户端状态标志
+        self.flags: int = 0
+        # // 当 server.requirepass 不为 NULL 时
+        # // 代表认证的状态
+        # // 0 代表未认证， 1 代表已认证
+        self.authenticated: int = 0
+        # // 复制状态
+        self.replstate: int = 0
+        # // 用于保存主服务器传来的 RDB 文件的文件描述符
+        self.repldbfd: int = 0
+        # // 读取主服务器传来的 RDB 文件的偏移量
+        self.repldboff: int = 0
+        # // 主服务器传来的 RDB 文件的大小
+        self.repldbsize: int = 0
+        self.replpreamble: sds = None      # /* replication DB preamble. */
+        # // 主服务器的复制偏移量
+        self.reploff: int = 0    #      /* replication offset if this is our master */
+        # // 从服务器最后一次发送 REPLCONF ACK 时的偏移量
+        self.repl_ack_off: int = 0    # /* replication ack offset, if this is a slave */
+        # // 从服务器最后一次发送 REPLCONF ACK 的时间
+        self.repl_ack_time: int = 0    #/* replication ack time, if this is a slave */
+        # // 主服务器的 master run ID
+        # // 保存在客户端，用于执行部分重同步
+        self.replrunid: str = ''
+        # // 从服务器的监听端口号
+        self.slave_listening_port: int = 0
+        # // 事务状态
+        self.mstate: multiState = None
+        # // 阻塞类型
+        self.btype: int = 0
+        # // 阻塞状态
+        self.bpop: blockingState = None
+        # // 最后被写入的全局复制偏移量
+        self.woff: int = 0
+        # // 被监视的键
+        self.watched_keys: rList = None
+        # // 这个字典记录了客户端所有订阅的频道
+        # // 键为频道名字，值为 NULL
+        # // 也即是，一个频道的集合
+        self.pubsub_channels: rDict = None
+        # // 链表，包含多个 pubsubPattern 结构
+        # // 记录了所有订阅频道的客户端的信息
+        # // 新 pubsubPattern 结构总是被添加到表尾
+        self.pubsub_patterns: rList = None
+        self.peerid: str = ''
+        # /* Response buffer */
+        # // 回复偏移量
+        self.bufpos: int = 0
+        # // 回复缓冲区
+        self.buf: bytearray = bytearray(REDIS_REPLY_CHUNK_BYTES)
+
 
 class redisCommand(object):
     pass
@@ -607,7 +725,6 @@ def initServer():
     from .db import dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
     from .adlist import listCreate
     from .pubsub import freePubsubPattern, listMatchPubsubPattern
-    from .sds import sdsempty
     from .aof import aofRewriteBufferReset
     from .networking import acceptTcpHandler, acceptUnixHandler
     # // 设置信号处理函数
