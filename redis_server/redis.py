@@ -9,7 +9,7 @@ from typing import List, Callable, Optional as Opt, Tuple
 from dataclasses import dataclass
 from .csix import timeval
 from .ae import (
-    aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop,
+    aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop, aeCreateEventLoop,
     aeCreateTimeEvent, aeCreateFileEvent, AE_ERR, AE_READABLE,
 )
 from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer, anetEnableTcpNoDelay, anetKeepAlive
@@ -189,8 +189,11 @@ def createClient(fd: Opt[socket.socket]) -> Opt[RedisClient]:
     if fd:
         server.clients.append(c)
     # // 初始化客户端的事务状态
-    initClientMultiState(c);
-    return c;
+    initClientMultiState(c)
+    return c
+
+def freeClient(c: RedisClient):
+    pass
 
 class redisCommand(object):
     pass

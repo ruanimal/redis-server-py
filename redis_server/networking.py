@@ -18,12 +18,23 @@ def dupClientReplyValue(o: redisObject) -> redisObject:
 def listMatchObjects(a: redisObject, b: redisObject):
     return equalStringObjects(a, b)
 
-def acceptCommonHandler(fd: socket.socket, flags: int):
-    from .redis import RedisClient
+def acceptCommonHandler(fd: socket.socket, flags: int) -> None:
+    from .redis import createClient, freeClient, server
 
-    c = RedisClient()
+    c = createClient(fd)
+    if not c:
+        fd.close()
+        return
 
-    pass
+    if len(server.clients) > server.maxclients:
+        err = "-ERR max number of clients reached\r\n"
+        fd.sendall(err)
+        server.stat_rejected_conn += 1
+        freeClient(c)
+        return
+    server.stat_numcommands += 1
+    c.flags |= flags
+
 
 def acceptTcpHandler(el: aeEventLoop, fd: int, privdata, mask: int):
     max_ = MAX_ACCEPTS_PER_CALL
