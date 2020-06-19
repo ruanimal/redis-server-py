@@ -6,6 +6,6 @@ if typing.TYPE_CHECKING:
 
 def initClientMultiState(c: 'RedisClient'):
     # // 命令队列
-    c.mstate.commands = None
+    c.mstate.commands = []
     # // 命令计数
     c.mstate.count = 0

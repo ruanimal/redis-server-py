@@ -1,3 +1,4 @@
+import typing
 from typing import List, Callable, Optional as Opt, Tuple, Union
 import select
 import time
@@ -5,6 +6,13 @@ import socket
 from datetime import datetime, timedelta
 from collections import namedtuple
 from .csix import cstr, timeval
+from .ae_api import (
+    aeApiCreate, aeApiFree, aeApiAddEvent, aeApiDelEvent, aeApiPoll, aeApiName,
+    aeApiResize,
+)
+
+if typing.TYPE_CHECKING:
+    from .redis import RedisClient
 
 # 事件执行状态
 ## 成功
@@ -70,7 +78,6 @@ class aeEventLoop:
         self.beforesleep: Opt[Callable[[aeEventLoop], None]] = None
 
 def aeCreateEventLoop(setsize: int) -> aeEventLoop:
-    from .ae_api import aeApiCreate
     eventLoop = aeEventLoop()
     eventLoop.events = [aeFileEvent() for _ in range(setsize)]
     eventLoop.fired = [aeFiredEvent() for _ in range(setsize)]
@@ -87,15 +94,13 @@ def aeCreateEventLoop(setsize: int) -> aeEventLoop:
     return eventLoop
 
 def aeDeleteEventLoop(eventLoop: aeEventLoop):
-    from .ae_api import aeApiFree
     aeApiFree(eventLoop)
 
 def aeStop(eventLoop: aeEventLoop) -> None:
     eventLoop.stop = 1
 
 def aeCreateFileEvent(eventLoop: aeEventLoop, fd: int,
-                      mask: int, proc: Callable, clientData: cstr) -> int:
-    from .ae_api import aeApiAddEvent
+                      mask: int, proc: Callable, clientData: Opt['RedisClient']) -> int:
     if fd >= eventLoop.setsize:
         raise RuntimeError(AE_ERR)
 
@@ -114,7 +119,6 @@ def aeCreateFileEvent(eventLoop: aeEventLoop, fd: int,
     return AE_OK
 
 def aeDeleteFileEvent(eventLoop: aeEventLoop, fd: int, mask: int) -> None:
-    from .ae_api import aeApiDelEvent
     if fd >= eventLoop.setsize:
         return
     if eventLoop.events[fd].mask == AE_NONE:
@@ -136,7 +140,7 @@ def aeGetFileEvents(eventLoop: aeEventLoop, fd: int) -> int:
     return eventLoop.events[fd].mask
 
 def aeCreateTimeEvent(eventLoop: aeEventLoop, milliseconds: int,
-                      proc: Callable, clientData: cstr, finalizerProc: Callable) -> int:
+                      proc: Callable, clientData, finalizerProc: Opt[Callable]) -> int:
     ident = eventLoop.timeEventNextId + 1
     te = aeTimeEvent()
     te.id = ident
@@ -199,8 +203,6 @@ def processTimeEvents(eventLoop: aeEventLoop) -> int:
 
 
 def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
-    from .ae_api import aeApiPoll
-
     processed = 0
     numevents = 0
 
@@ -292,7 +294,6 @@ def aeMain(eventLoop: aeEventLoop) -> None:
         aeProcessEvents(eventLoop, AE_ALL_EVENTS)
 
 def aeGetApiName() -> str:
-    from .ae_api import aeApiName
     return aeApiName()
 
 def aeSetBeforeSleepProc(eventLoop: aeEventLoop, beforesleep) -> None:
@@ -302,8 +303,6 @@ def aeGetSetSize(eventLoop: aeEventLoop) -> int:
     return eventLoop.setsize
 
 def aeResizeSetSize(eventLoop: aeEventLoop, setsize: int) -> int:
-    from .ae_api import aeApiResize
-
     if setsize == eventLoop.setsize:
         return AE_OK
     if eventLoop.maxfd >= setsize:

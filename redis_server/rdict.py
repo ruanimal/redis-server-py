@@ -155,12 +155,12 @@ def _dictReset(ht: dictht):
     ht.sizemask = 0
     ht.used = 0
 
-def dictCreate(type: dictType, privDataPtr: cstr) -> rDict:
+def dictCreate(type: dictType, privDataPtr) -> rDict:
     d = rDict()
     _dictInit(d, type, privDataPtr)
     return d
 
-def _dictInit(d: rDict, type: dictType, privDataPtr: cstr) -> int:
+def _dictInit(d: rDict, type: dictType, privDataPtr) -> int:
     _dictReset(d.ht[0])
     _dictReset(d.ht[1])
     d.type = type

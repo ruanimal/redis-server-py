@@ -5,8 +5,15 @@ import logging
 import os
 import uuid
 import socket
-from typing import List, Callable, Optional as Opt, Tuple
+import sys
+import platform
+import argparse
+from typing import List, Callable, Optional as Opt, Tuple, BinaryIO
 from dataclasses import dataclass
+from io import BufferedWriter
+from collections import OrderedDict
+from itertools import chain
+
 from .csix import timeval
 from .ae import (
     aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop, aeCreateEventLoop,
@@ -16,11 +23,18 @@ from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer, a
 from .config import ServerConfig as Conf
 from .config import *
 from .adlist import rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod
-from .rdict import rDict, dictCreate
+from .rdict import rDict, dictCreate, dictSetHashFunctionSeed
 from .sds import sds, sdsempty
 from .robject import redisObject, decrRefCountVoid
 from .db import RedisDB, dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
-
+from .pubsub import freePubsubPattern, listMatchPubsubPattern
+from .aof import aofRewriteBufferReset
+from .networking import (
+    acceptTcpHandler, acceptUnixHandler, readQueryFromClient, dupClientReplyValue,
+    listMatchObjects,
+)
+from .multi import initClientMultiState
+from .util import Singleton
 
 __version__ = '0.0.1'
 
@@ -52,152 +66,6 @@ class blockingState:
         # // 复制偏移量
         self.reploffset: int = 0
 
-class RedisClient(object):
-    def __init__(self):
-        from .db import RedisDB
-        # // 套接字描述符
-        self.fd: socket.socket = None
-        # // 当前正在使用的数据库
-        self.db: RedisDB = None
-        # // 当前正在使用的数据库的 id （号码）
-        self.dictid: int = 0
-        # // 客户端的名字
-        self.name: redisObject = None
-        # // 查询缓冲区
-        self.querybuf: sds = None
-        # // 查询缓冲区长度峰值
-        self.querybuf_peak: int = 0   # /* Recent (100ms or more) peak of querybuf size */
-        # // 参数数量
-        # int argc;
-        # // 参数对象数组
-        self.argv: List[redisObject] = []
-        # // 记录被客户端执行的命令
-        self.cmd: redisCommand = None
-        self.lastcmd: redisCommand = None
-        # // 请求的类型：内联命令还是多条命令
-        self.reqtype: int = 0
-        # // 剩余未读取的命令内容数量
-        self.multibulklen: int = 0
-        # // 命令内容的长度
-        self.bulklen: int = 0
-        # // 回复链表
-        self.reply: rList = None
-        # // 回复链表中对象的总大小
-        self.reply_bytes: int = 0
-        # // 已发送字节，处理 short write 用
-        self.sentlen: int
-        # // 创建客户端的时间
-        self.ctime: int = 0
-        # // 客户端最后一次和服务器互动的时间
-        self.lastinteraction: int = 0
-        # // 客户端的输出缓冲区超过软性限制的时间
-        self.obuf_soft_limit_reached_time: int = 0
-        # // 客户端状态标志
-        self.flags: int = 0
-        # // 当 server.requirepass 不为 NULL 时
-        # // 代表认证的状态
-        # // 0 代表未认证， 1 代表已认证
-        self.authenticated: int = 0
-        # // 复制状态
-        self.replstate: int = 0
-        # // 用于保存主服务器传来的 RDB 文件的文件描述符
-        self.repldbfd: int = 0
-        # // 读取主服务器传来的 RDB 文件的偏移量
-        self.repldboff: int = 0
-        # // 主服务器传来的 RDB 文件的大小
-        self.repldbsize: int = 0
-        self.replpreamble: sds = None      # /* replication DB preamble. */
-        # // 主服务器的复制偏移量
-        self.reploff: int = 0    #      /* replication offset if this is our master */
-        # // 从服务器最后一次发送 REPLCONF ACK 时的偏移量
-        self.repl_ack_off: int = 0    # /* replication ack offset, if this is a slave */
-        # // 从服务器最后一次发送 REPLCONF ACK 的时间
-        self.repl_ack_time: int = 0    #/* replication ack time, if this is a slave */
-        # // 主服务器的 master run ID
-        # // 保存在客户端，用于执行部分重同步
-        self.replrunid: str = ''
-        # // 从服务器的监听端口号
-        self.slave_listening_port: int = 0
-        # // 事务状态
-        self.mstate: multiState = None
-        # // 阻塞类型
-        self.btype: int = 0
-        # // 阻塞状态
-        self.bpop: blockingState = blockingState()
-        # // 最后被写入的全局复制偏移量
-        self.woff: int = 0
-        # // 被监视的键
-        self.watched_keys: rList = None
-        # // 这个字典记录了客户端所有订阅的频道
-        # // 键为频道名字，值为 NULL
-        # // 也即是，一个频道的集合
-        self.pubsub_channels: rDict = None
-        # // 链表，包含多个 pubsubPattern 结构
-        # // 记录了所有订阅频道的客户端的信息
-        # // 新 pubsubPattern 结构总是被添加到表尾
-        self.pubsub_patterns: rList = None
-        self.peerid: str = ''
-        # /* Response buffer */
-        # // 回复偏移量
-        self.bufpos: int = 0
-        # // 回复缓冲区
-        self.buf: bytearray = bytearray(REDIS_REPLY_CHUNK_BYTES)
-
-def selectDb(c: RedisClient, idx: int):
-    raise NotImplementedError
-
-def createClient(fd: Opt[socket.socket]) -> Opt[RedisClient]:
-    from .networking import readQueryFromClient, dupClientReplyValue, listMatchObjects
-    from .multi import initClientMultiState
-
-    c = RedisClient()
-    if fd:
-        anetNonBlock(fd)
-        anetEnableTcpNoDelay(fd)
-        if server.tcpkeepalive:
-            anetKeepAlive(fd, server.tcpkeepalive)
-        if (aeCreateFileEvent(server.el, fd, AE_READABLE, readQueryFromClient, c) == AE_ERR):
-            fd.close()
-            return None
-
-    # 默认数据库
-    selectDb(c, 0)
-    c.fd = fd
-    c.bulklen = -1
-    # // 创建时间和最后一次互动时间
-    c.ctime = c.lastinteraction = server.unixtime
-    # // 复制状态
-    c.replstate = REDIS_REPL_NONE
-    # // 回复链表
-    c.reply = listCreate()
-    listSetFreeMethod(c.reply, decrRefCountVoid)
-    listSetDupMethod(c.reply, dupClientReplyValue)
-    # // 阻塞类型
-    c.btype = REDIS_BLOCKED_NONE
-    # // 造成客户端阻塞的列表键
-    c.bpop.keys = dictCreate(setDictType, None)
-    # // 在解除阻塞时将元素推入到 target 指定的键中
-    # // BRPOPLPUSH 命令时使用
-    # // 进行事务时监视的键
-    c.watched_keys = listCreate()
-    # // 订阅的频道和模式
-    c.pubsub_channels = dictCreate(setDictType, None)
-    c.pubsub_patterns = listCreate()
-    listSetFreeMethod(c.pubsub_patterns, decrRefCountVoid)
-    listSetMatchMethod(c.pubsub_patterns, listMatchObjects)
-    # // 如果不是伪客户端，那么添加到服务器的客户端链表中
-    if fd:
-        server.clients.append(c)
-    # // 初始化客户端的事务状态
-    initClientMultiState(c)
-    return c
-
-def freeClient(c: RedisClient):
-    pass
-
-class redisCommand(object):
-    pass
-
 class clientBufferLimitsConfig:
     def __init__(self):
         # 硬限制
@@ -211,6 +79,9 @@ class redisOpArray:
     # TODO(ruan.lj@foxmail.com): something to do.
     pass
 
+class redisCommand(object):
+    pass
+
 @dataclass
 class saveparam:
     # 多少秒之内
@@ -218,50 +89,8 @@ class saveparam:
     # 发生多少次修改
     changes: int = 0
 
-def populateCommandTable():
-    pass
-
-def getClientLimitClassByName(name: str) -> int:
-    mapping = {
-        "normal": REDIS_CLIENT_LIMIT_CLASS_NORMAL,
-        "slave": REDIS_CLIENT_LIMIT_CLASS_SLAVE,
-        "pubsub": REDIS_CLIENT_LIMIT_CLASS_PUBSUB,
-    }
-    return mapping.get(name, -1)
-
-def keyspaceEventsStringToFlags(classes: str) -> int:
-    flags = 0
-    for c in classes:
-        if c == 'A':
-            flags |= REDIS_NOTIFY_ALL
-        elif c == 'g':
-            flags |= REDIS_NOTIFY_GENERIC
-        elif c == '$':
-            flags |= REDIS_NOTIFY_STRING
-        elif c == 'l':
-            flags |= REDIS_NOTIFY_LIST
-        elif c == 's':
-            flags |= REDIS_NOTIFY_SET
-        elif c == 'h':
-            flags |= REDIS_NOTIFY_HASH
-        elif c == 'z':
-            flags |= REDIS_NOTIFY_ZSET
-        elif c == 'x':
-            flags |= REDIS_NOTIFY_EXPIRED
-        elif c == 'e':
-            flags |= REDIS_NOTIFY_EVICTED
-        elif c == 'K':
-            flags |= REDIS_NOTIFY_KEYSPACE
-        elif c == 'E':
-            flags |= REDIS_NOTIFY_KEYEVENT
-        else:
-            return -1
-    return flags
-
-class RedisServer(object):
+class RedisServer(Singleton):
     def __init__(self):
-        from .db import RedisDB
-        from io import BufferedWriter
         self.configfile:str = ''  # 配置文件的绝对路径
         self.hz:int = 0      # serverCron() 每秒调用的次数
         self.db: List[RedisDB] = []
@@ -466,7 +295,7 @@ class RedisServer(object):
         self.aof_buf = None   # TODO(ruan.lj@foxmail.com): sds or bytearry.
         # AOF 文件的描述符
         #  File descriptor of currently selected AOF file
-        self.aof_fd: BufferedWriter = None
+        self.aof_fd: BinaryIO = None
         # AOF 的当前目标数据库
         #  Currently selected DB in AOF
         self.aof_selected_db: int = 0
@@ -575,7 +404,7 @@ class RedisServer(object):
         self.pubsub_channels: rDict = None
         # 这个链表记录了客户端订阅的所有模式的名字
         #  A list of pubsub_patterns
-        self.pubsub_patterns: List = None
+        self.pubsub_patterns: rList = None
         self.notify_keyspace_events: int = 0
         #  Events to propagate via Pub/Sub. This is anxor of REDIS_NOTIFY... flags.
         #  Cluster
@@ -602,10 +431,187 @@ class RedisServer(object):
     def ipfd_count(self):
         return len(self.ipfd)
 
-server = RedisServer()
+
+class RedisClient(object):
+    def __init__(self):
+        # // 套接字描述符
+        self.fd: Opt[socket.socket] = None
+        # // 当前正在使用的数据库
+        self.db: RedisDB = None
+        # // 当前正在使用的数据库的 id （号码）
+        self.dictid: int = 0
+        # // 客户端的名字
+        self.name: redisObject = None
+        # // 查询缓冲区
+        self.querybuf: sds = None
+        # // 查询缓冲区长度峰值
+        self.querybuf_peak: int = 0   # /* Recent (100ms or more) peak of querybuf size */
+        # // 参数数量
+        # int argc;
+        # // 参数对象数组
+        self.argv: List[redisObject] = []
+        # // 记录被客户端执行的命令
+        self.cmd: redisCommand = None
+        self.lastcmd: redisCommand = None
+        # // 请求的类型：内联命令还是多条命令
+        self.reqtype: int = 0
+        # // 剩余未读取的命令内容数量
+        self.multibulklen: int = 0
+        # // 命令内容的长度
+        self.bulklen: int = 0
+        # // 回复链表
+        self.reply: rList = None
+        # // 回复链表中对象的总大小
+        self.reply_bytes: int = 0
+        # // 已发送字节，处理 short write 用
+        self.sentlen: int
+        # // 创建客户端的时间
+        self.ctime: int = 0
+        # // 客户端最后一次和服务器互动的时间
+        self.lastinteraction: int = 0
+        # // 客户端的输出缓冲区超过软性限制的时间
+        self.obuf_soft_limit_reached_time: int = 0
+        # // 客户端状态标志
+        self.flags: int = 0
+        # // 当 server.requirepass 不为 NULL 时
+        # // 代表认证的状态
+        # // 0 代表未认证， 1 代表已认证
+        self.authenticated: int = 0
+        # // 复制状态
+        self.replstate: int = 0
+        # // 用于保存主服务器传来的 RDB 文件的文件描述符
+        self.repldbfd: int = 0
+        # // 读取主服务器传来的 RDB 文件的偏移量
+        self.repldboff: int = 0
+        # // 主服务器传来的 RDB 文件的大小
+        self.repldbsize: int = 0
+        self.replpreamble: sds = None      # /* replication DB preamble. */
+        # // 主服务器的复制偏移量
+        self.reploff: int = 0    #      /* replication offset if this is our master */
+        # // 从服务器最后一次发送 REPLCONF ACK 时的偏移量
+        self.repl_ack_off: int = 0    # /* replication ack offset, if this is a slave */
+        # // 从服务器最后一次发送 REPLCONF ACK 的时间
+        self.repl_ack_time: int = 0    #/* replication ack time, if this is a slave */
+        # // 主服务器的 master run ID
+        # // 保存在客户端，用于执行部分重同步
+        self.replrunid: str = ''
+        # // 从服务器的监听端口号
+        self.slave_listening_port: int = 0
+        # // 事务状态
+        self.mstate: multiState = multiState()
+        # // 阻塞类型
+        self.btype: int = 0
+        # // 阻塞状态
+        self.bpop: blockingState = blockingState()
+        # // 最后被写入的全局复制偏移量
+        self.woff: int = 0
+        # // 被监视的键
+        self.watched_keys: rList = None
+        # // 这个字典记录了客户端所有订阅的频道
+        # // 键为频道名字，值为 NULL
+        # // 也即是，一个频道的集合
+        self.pubsub_channels: rDict = None
+        # // 链表，包含多个 pubsubPattern 结构
+        # // 记录了所有订阅频道的客户端的信息
+        # // 新 pubsubPattern 结构总是被添加到表尾
+        self.pubsub_patterns: rList = None
+        self.peerid: str = ''
+        # /* Response buffer */
+        # // 回复偏移量
+        self.bufpos: int = 0
+        # // 回复缓冲区
+        self.buf: bytearray = bytearray(REDIS_REPLY_CHUNK_BYTES)
+
+def selectDb(c: RedisClient, idx: int):
+    pass
+
+def createClient(server: RedisServer, fd: Opt[socket.socket]) -> Opt[RedisClient]:
+    c = RedisClient()
+    if fd:
+        anetNonBlock(fd)
+        anetEnableTcpNoDelay(fd)
+        if server.tcpkeepalive:
+            anetKeepAlive(fd, server.tcpkeepalive)
+        if (aeCreateFileEvent(server.el, fd.fileno(), AE_READABLE, readQueryFromClient, c) == AE_ERR):
+            fd.close()
+            return None
+
+    # 默认数据库
+    selectDb(c, 0)
+    c.fd = fd
+    c.bulklen = -1
+    # // 创建时间和最后一次互动时间
+    c.ctime = c.lastinteraction = server.unixtime
+    # // 复制状态
+    c.replstate = REDIS_REPL_NONE
+    # // 回复链表
+    c.reply = listCreate()
+    listSetFreeMethod(c.reply, decrRefCountVoid)
+    listSetDupMethod(c.reply, dupClientReplyValue)
+    # // 阻塞类型
+    c.btype = REDIS_BLOCKED_NONE
+    # // 造成客户端阻塞的列表键
+    c.bpop.keys = dictCreate(setDictType, None)
+    # // 在解除阻塞时将元素推入到 target 指定的键中
+    # // BRPOPLPUSH 命令时使用
+    # // 进行事务时监视的键
+    c.watched_keys = listCreate()
+    # // 订阅的频道和模式
+    c.pubsub_channels = dictCreate(setDictType, None)
+    c.pubsub_patterns = listCreate()
+    listSetFreeMethod(c.pubsub_patterns, decrRefCountVoid)
+    listSetMatchMethod(c.pubsub_patterns, listMatchObjects)
+    # // 如果不是伪客户端，那么添加到服务器的客户端链表中
+    if fd:
+        server.clients.append(c)
+    # // 初始化客户端的事务状态
+    initClientMultiState(c)
+    return c
+
+def freeClient(c: RedisClient):
+    pass
+
+def populateCommandTable():
+    pass
+
+def getClientLimitClassByName(name: str) -> int:
+    mapping = {
+        "normal": REDIS_CLIENT_LIMIT_CLASS_NORMAL,
+        "slave": REDIS_CLIENT_LIMIT_CLASS_SLAVE,
+        "pubsub": REDIS_CLIENT_LIMIT_CLASS_PUBSUB,
+    }
+    return mapping.get(name, -1)
+
+def keyspaceEventsStringToFlags(classes: str) -> int:
+    flags = 0
+    for c in classes:
+        if c == 'A':
+            flags |= REDIS_NOTIFY_ALL
+        elif c == 'g':
+            flags |= REDIS_NOTIFY_GENERIC
+        elif c == '$':
+            flags |= REDIS_NOTIFY_STRING
+        elif c == 'l':
+            flags |= REDIS_NOTIFY_LIST
+        elif c == 's':
+            flags |= REDIS_NOTIFY_SET
+        elif c == 'h':
+            flags |= REDIS_NOTIFY_HASH
+        elif c == 'z':
+            flags |= REDIS_NOTIFY_ZSET
+        elif c == 'x':
+            flags |= REDIS_NOTIFY_EXPIRED
+        elif c == 'e':
+            flags |= REDIS_NOTIFY_EVICTED
+        elif c == 'K':
+            flags |= REDIS_NOTIFY_KEYSPACE
+        elif c == 'E':
+            flags |= REDIS_NOTIFY_KEYEVENT
+        else:
+            return -1
+    return flags
 
 def checkForSentinelMode() -> int:
-    import sys
     if 'redis-sentinel' in sys.argv[0]:
         return 1
     if '--sentinel' in sys.argv[1:]:
@@ -615,8 +621,7 @@ def checkForSentinelMode() -> int:
 def getLRUClock() -> int:
     return int(int(time.time() * 1000) / REDIS_LRU_CLOCK_RESOLUTION) & REDIS_LRU_CLOCK_MAX
 
-def initServerConfig():
-    import platform
+def initServerConfig(server: RedisServer):
     ## 服务器状态
     # 设置服务器的运行 ID
     server.runid = str(uuid.uuid4())
@@ -632,7 +637,7 @@ def initServerConfig():
     server.unixsocket = ""
     server.unixsocketperm = Conf.REDIS_DEFAULT_UNIX_SOCKET_PERM
     # server.ipfd_count = 0
-    server.sofd = None
+    # server.sofd = None
     server.dbnum = Conf.REDIS_DEFAULT_DBNUM
     # server.verbosity = Conf.REDIS_DEFAULT_VERBOSITY
     server.maxidletime = Conf.REDIS_MAXIDLETIME
@@ -641,7 +646,7 @@ def initServerConfig():
     server.client_max_querybuf_len = REDIS_MAX_QUERYBUF_LEN
     server.saveparams = []
     server.loading = 0
-    server.logfile = "";
+    # server.logfile = "";
     server.daemonize = Conf.REDIS_DEFAULT_DAEMONIZE
     server.aof_state = REDIS_AOF_OFF
     server.aof_fsync = REDIS_DEFAULT_AOF_FSYNC
@@ -682,10 +687,10 @@ def initServerConfig():
     server.zset_max_ziplist_value = REDIS_ZSET_MAX_ZIPLIST_VALUE
     server.hll_sparse_max_bytes = REDIS_DEFAULT_HLL_SPARSE_MAX_BYTES
     server.shutdown_asap = 0
-    server.repl_ping_slave_period = Conf.REDIS_REPL_PING_SLAVE_PERIOD
-    server.repl_timeout = Conf.REDIS_REPL_TIMEOUT
-    server.repl_min_slaves_to_write = Conf.REDIS_DEFAULT_MIN_SLAVES_TO_WRITE
-    server.repl_min_slaves_max_lag = Conf.REDIS_DEFAULT_MIN_SLAVES_MAX_LAG
+    # server.repl_ping_slave_period = Conf.REDIS_REPL_PING_SLAVE_PERIOD
+    # server.repl_timeout = Conf.REDIS_REPL_TIMEOUT
+    # server.repl_min_slaves_to_write = Conf.REDIS_DEFAULT_MIN_SLAVES_TO_WRITE
+    # server.repl_min_slaves_max_lag = Conf.REDIS_DEFAULT_MIN_SLAVES_MAX_LAG
     # server.cluster_enabled = 0
     # server.cluster_node_timeout = Conf.REDIS_CLUSTER_DEFAULT_NODE_TIMEOUT
     # server.cluster_migration_barrier = Conf.REDIS_CLUSTER_DEFAULT_MIGRATION_BARRIER
@@ -728,7 +733,7 @@ def initServerConfig():
     server.watchdog_period = 0
 
 
-def listenToPort() -> int:
+def listenToPort(server: RedisServer) -> int:
     port = server.port
     backlog = server.tcp_backlog
     if not server.bindaddr:
@@ -749,7 +754,7 @@ def listenToPort() -> int:
         anetNonBlock(s)
     return REDIS_OK
 
-def resetServerStats():
+def resetServerStats(server: RedisServer):
     server.stat_numcommands = 0
     server.stat_numconnections = 0
     server.stat_expiredkeys = 0
@@ -766,26 +771,23 @@ def resetServerStats():
     server.ops_sec_last_sample_time = int(time.time() * 1000)
     server.ops_sec_last_sample_ops = 0
 
-def updateCachedTime():
+def updateCachedTime(server: RedisServer):
     server.unixtime = int(time.time())
     server.mstime = int(time.time() * 1000)
 
 def serverCron(*args):
     pass
 
-def initServer():
-    from .rdict import dictCreate
-    from .adlist import listCreate
-    from .pubsub import freePubsubPattern, listMatchPubsubPattern
-    from .aof import aofRewriteBufferReset
-    from .networking import acceptTcpHandler, acceptUnixHandler
+def initServer(server: RedisServer):
     # // 设置信号处理函数
     # signal(SIGHUP, SIG_IGN);
     # signal(SIGPIPE, SIG_IGN);
     # setupSignalHandlers();
+
+    logger.info(repr(server))
     server.el = aeCreateEventLoop(server.maxclients+REDIS_EVENTLOOP_FDSET_INCR)
     server.db = [RedisDB() for _ in range(server.dbnum)]
-    listenToPort()
+    listenToPort(server)
     if server.unixsocket:
         try:
             os.unlink(server.unixsocket)
@@ -819,7 +821,7 @@ def initServer():
     server.rdb_save_time_last = -1
     server.rdb_save_time_start = -1
     server.dirty = 0
-    resetServerStats()
+    resetServerStats(server)
     # /* A few stats we don't want to reset: server startup time, and peak mem. */
     server.stat_starttime = int(time.time())
     server.stat_peak_memory = 0
@@ -827,8 +829,8 @@ def initServer():
     server.lastbgsave_status = REDIS_OK
     server.aof_last_write_status = REDIS_OK
     server.aof_last_write_errno = 0
-    server.repl_good_slaves_count = 0
-    updateCachedTime()
+    # server.repl_good_slaves_count = 0
+    updateCachedTime(server)
 
     if aeCreateTimeEvent(server.el, 1, serverCron, None, None) == AE_ERR:
         logger.error("Can't create the serverCron time event.")
@@ -853,9 +855,7 @@ def initSentinelConfig():
 def initSentinel():
     pass
 
-def loadServerConfig(filename: str, options: dict) -> None:
-    from collections import OrderedDict
-    from itertools import chain
+def loadServerConfig(server: RedisServer, filename: str, options: dict) -> None:
     config_list = []
     if filename:
         with open(filename) as fp:
@@ -897,7 +897,7 @@ def loadServerConfig(filename: str, options: dict) -> None:
         elif key == 'databases':
             server.dbnum = int(val)
         elif key == 'include':
-            loadServerConfig(val, {})
+            loadServerConfig(server, val, {})
         elif key == 'maxclients':
             server.maxclients = int(val)
         elif key == 'rdbcompression':
@@ -978,11 +978,10 @@ def loadServerConfig(filename: str, options: dict) -> None:
             assert server.notify_keyspace_events != -1
 
 
-def parse_server_args() -> Tuple[str, dict]:
+def parse_server_args(server: RedisServer) -> Tuple[str, dict]:
     def handle_version(args):
         print('Redis server v={}'.format(__version__))
 
-    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('-v', '--version', help='show version info and exit', action='store_true')
     parser.add_argument('conf', help='config file path', nargs='?')
@@ -1001,7 +1000,7 @@ def parse_server_args() -> Tuple[str, dict]:
 
     for key in options:
         options[key] = getattr(args, key, '')
-    loadServerConfig(args.conf, options)
+    loadServerConfig(server, args.conf, options)
     if args.conf:
         server.configfile = os.path.abspath(args.conf)
     if not (args.conf or options):
@@ -1019,7 +1018,7 @@ def daemonize():
     if fd > 2:
         os.close(fd)
 
-def redisAsciiArt() -> None:
+def redisAsciiArt(server: RedisServer) -> None:
     art = (
         "                _._ \n"
         "           _.-``__ ''-._ \n"
@@ -1060,10 +1059,9 @@ def beforeSleep(eventLoop: aeEventLoop) -> None:
     # TODO(ruan.lj@foxmail.com): something to do.
     pass
 
-
 def main():
-
-    from .rdict import dictSetHashFunctionSeed
+    server = RedisServer()
+    print(server.__class__._instances)
     locale.setlocale(locale.LC_COLLATE, '')
     random.seed(int(time.time()) ^ os.getpid())
     tv = timeval.from_datetime()
@@ -1071,23 +1069,23 @@ def main():
     # 检查服务器是否以 Sentinel 模式启动
     server.sentinel_mode = checkForSentinelMode();
     # 初始化服务器
-    initServerConfig();
-    parse_server_args()
+    initServerConfig(server);
+    parse_server_args(server)
     # 如果服务器以 Sentinel 模式启动，那么进行 Sentinel 功能相关的初始化
     # 并为要监视的主服务器创建一些相应的数据结构
     # NOTE: not support now
     if (server.sentinel_mode):
         initSentinelConfig()
         initSentinel()
-    if (server.daemonize):
-        daemonize()
+    # if (server.daemonize):
+    #     daemonize()
 
-    initServer()
+    initServer(server)
     # 为服务器进程设置名字
     # NOTE: not support now
     # redisSetProcTitle(argv[0]);
 
-    redisAsciiArt()
+    redisAsciiArt(server)
     if not server.sentinel_mode:
         logger.warning("Server started, Redis version %s", __version__)
         loadDataFromDisk()
@@ -1103,8 +1101,9 @@ def main():
     aeDeleteEventLoop(server.el)
     return 0
 
-if __name__ == '__main__':
-    # parse_server_args()
-    # redisAsciiArt()
-    # import ipdb; ipdb.set_trace()
-    main()
+# if __name__ == '__main__':
+#     # parse_server_args()
+#     # redisAsciiArt()
+#     # import ipdb; ipdb.set_trace()
+#     logging.basicConfig(level='INFO')
+#     main()

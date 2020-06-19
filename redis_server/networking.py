@@ -19,15 +19,20 @@ def listMatchObjects(a: redisObject, b: redisObject):
     return equalStringObjects(a, b)
 
 def acceptCommonHandler(fd: socket.socket, flags: int) -> None:
-    from .redis import createClient, freeClient, server
+    from .redis import createClient, freeClient, RedisServer
 
-    c = createClient(fd)
+    server = RedisServer()
+    assert server
+    print(server.__class__._instances)
+    for k, v in server.__class__._instances.items():
+        print(repr(k), id(k), repr(v))
+    c = createClient(server, fd)
     if not c:
         fd.close()
         return
 
     if len(server.clients) > server.maxclients:
-        err = "-ERR max number of clients reached\r\n"
+        err = b"-ERR max number of clients reached\r\n"
         fd.sendall(err)
         server.stat_rejected_conn += 1
         freeClient(c)

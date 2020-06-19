@@ -8,11 +8,13 @@ __all__ = (
     'aeApiResize',
 )
 
+import logging
 import select
 import typing
 import socket
 from typing import Optional as Opt, List, Union
 
+logger = logging.getLogger(__name__)
 
 if typing.TYPE_CHECKING:
     from .ae import aeEventLoop, timeval
@@ -53,28 +55,30 @@ def aeApiDelEvent(eventLoop: 'aeEventLoop', fd: int, mask: int) -> None:
     if mask & AE_WRITABLE:
         list_remove(state.wfds, fd)
 
-
 def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
+    from itertools import chain
     from .ae import AE_READABLE, AE_WRITABLE, AE_NONE
+
     assert tvp
     numevents = 0
     state: aeApiState = eventLoop.apidata
 
     timeout = tvp.time
     _rfds, _wfds, _ = select.select(state.rfds, state.wfds, [], timeout)
-    if _rfds or _wfds:
-        for j in range(eventLoop.maxfd):
-            mask = 0
-            fe = eventLoop.events[j]
-            if fe.mask == AE_NONE:
-                continue
-            if (fe.mask & AE_READABLE) and (j in _rfds):
-                mask |= AE_READABLE
-            if (fe.mask & AE_WRITABLE) and (j in _wfds):
-                mask |= AE_WRITABLE
-            eventLoop.fired[numevents].fd = j
-            eventLoop.fired[numevents].mask = mask
-            numevents += 1
+
+    for fd in chain(_rfds, _wfds):
+        assert fd <= eventLoop.maxfd
+        mask = 0
+        fe = eventLoop.events[fd]
+        if fe.mask == AE_NONE:
+            continue
+        if (fe.mask & AE_READABLE):
+            mask |= AE_READABLE
+        if (fe.mask & AE_WRITABLE):
+            mask |= AE_WRITABLE
+        eventLoop.fired[numevents].fd = fd
+        eventLoop.fired[numevents].mask = mask
+        numevents += 1
     return numevents
 
 

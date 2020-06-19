@@ -1,4 +1,5 @@
 from .csix import cstr, memcpy, NUL
+from typing import Dict, Any
 
 def ll2string(s: bytearray, length: int, value: int):
     if length == 0:
@@ -23,3 +24,14 @@ def ll2string(s: bytearray, length: int, value: int):
     s[:l] = buf[p:p+l]  # memcpy(s,p,l)
     s[l] = NUL
     return l
+
+
+class _SingletonMeta(type):
+    _instances: Dict[Any, Any]  = {}
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(_SingletonMeta, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+class Singleton(metaclass=_SingletonMeta):
+    pass
