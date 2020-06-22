@@ -2,7 +2,6 @@ import socket
 from logging import getLogger
 from .ae import aeEventLoop
 from .anet import anetTcpAccept
-from .ae_api import FileDes
 from .robject import redisObject, incrRefCount, equalStringObjects
 
 logger = getLogger(__name__)
@@ -23,6 +22,10 @@ def acceptCommonHandler(fd: socket.socket, flags: int) -> None:
     from .redis import createClient, freeClient, RedisServer
 
     server = RedisServer()
+    assert server
+    print(server.__class__._instances)
+    for k, v in server.__class__._instances.items():
+        print(repr(k), id(k), repr(v))
     c = createClient(server, fd)
     if not c:
         fd.close()
@@ -36,15 +39,15 @@ def acceptCommonHandler(fd: socket.socket, flags: int) -> None:
         return
     server.stat_numcommands += 1
     c.flags |= flags
-    c.fd.sendall(b'Hello world\r\n')   #
 
-def acceptTcpHandler(el: aeEventLoop, fd: FileDes, privdata, mask: int):
+
+def acceptTcpHandler(el: aeEventLoop, fd: int, privdata, mask: int):
     max_ = MAX_ACCEPTS_PER_CALL
 
     while max_:
         max_ -= 1
-        assert isinstance(fd, socket.socket), repr(fd)
-        cfd, addr = anetTcpAccept(fd)
+        sfd = socket.socket(fileno=fd)
+        cfd, addr = anetTcpAccept(sfd)
         logger.info('Accepted %s:%s', *addr)
         acceptCommonHandler(cfd, 0)
 

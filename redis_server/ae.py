@@ -8,7 +8,7 @@ from collections import namedtuple
 from .csix import cstr, timeval
 from .ae_api import (
     aeApiCreate, aeApiFree, aeApiAddEvent, aeApiDelEvent, aeApiPoll, aeApiName,
-    aeApiResize, FileDes,
+    aeApiResize,
 )
 
 if typing.TYPE_CHECKING:
@@ -60,7 +60,7 @@ class aeTimeEvent:
 
 class aeFiredEvent:
     def __init__(self):
-        self.fd: FileDes = None
+        self.fd: int = 0
         self.mask: int = 0
 
 class aeEventLoop:
@@ -99,12 +99,12 @@ def aeDeleteEventLoop(eventLoop: aeEventLoop):
 def aeStop(eventLoop: aeEventLoop) -> None:
     eventLoop.stop = 1
 
-def aeCreateFileEvent(eventLoop: aeEventLoop, fd: FileDes,
+def aeCreateFileEvent(eventLoop: aeEventLoop, fd: int,
                       mask: int, proc: Callable, clientData: Opt['RedisClient']) -> int:
-    if fd.fileno() >= eventLoop.setsize:
+    if fd >= eventLoop.setsize:
         raise RuntimeError(AE_ERR)
 
-    fe = eventLoop.events[fd.fileno()]
+    fe = eventLoop.events[fd]
     if aeApiAddEvent(eventLoop, fd, mask) == -1:
         return AE_ERR
 
@@ -114,20 +114,19 @@ def aeCreateFileEvent(eventLoop: aeEventLoop, fd: FileDes,
     if mask & AE_WRITABLE:
         fe.wfileProc = proc
     fe.clientData = clientData
-    if fd.fileno() > eventLoop.maxfd:
-        eventLoop.maxfd = fd.fileno()
+    if fd > eventLoop.maxfd:
+        eventLoop.maxfd = fd
     return AE_OK
 
-def aeDeleteFileEvent(eventLoop: aeEventLoop, fd: FileDes, mask: int) -> None:
-    fdno = fd.fileno()
-    if fdno >= eventLoop.setsize:
+def aeDeleteFileEvent(eventLoop: aeEventLoop, fd: int, mask: int) -> None:
+    if fd >= eventLoop.setsize:
         return
-    if eventLoop.events[fdno].mask == AE_NONE:
+    if eventLoop.events[fd].mask == AE_NONE:
         return
 
-    fe = eventLoop.events[fdno]
+    fe = eventLoop.events[fd]
     fe.mask = fe.mask & (~mask)
-    if fdno == eventLoop.maxfd and fe.mask == AE_NONE:
+    if fd == eventLoop.maxfd and fe.mask == AE_NONE:
         j = eventLoop.maxfd-1
         for j in range(eventLoop.maxfd-1, -1, -1):
             if eventLoop.events[j].mask != AE_NONE:
@@ -135,10 +134,10 @@ def aeDeleteFileEvent(eventLoop: aeEventLoop, fd: FileDes, mask: int) -> None:
         eventLoop.maxfd = j
     aeApiDelEvent(eventLoop, fd, mask)
 
-def aeGetFileEvents(eventLoop: aeEventLoop, fd: FileDes) -> int:
-    if fd.fileno() >= eventLoop.setsize:
+def aeGetFileEvents(eventLoop: aeEventLoop, fd: int) -> int:
+    if fd >= eventLoop.setsize:
         return 0
-    return eventLoop.events[fd.fileno()].mask
+    return eventLoop.events[fd].mask
 
 def aeCreateTimeEvent(eventLoop: aeEventLoop, milliseconds: int,
                       proc: Callable, clientData, finalizerProc: Opt[Callable]) -> int:
@@ -236,7 +235,7 @@ def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
                 tv = None
     numevents = aeApiPoll(eventLoop, tv)
     for j in range(numevents):
-        fe = eventLoop.events[eventLoop.fired[j].fd.fileno()]
+        fe = eventLoop.events[eventLoop.fired[j].fd]
         mask = eventLoop.fired[j].mask
         fd = eventLoop.fired[j].fd
         rfired = 0
@@ -252,7 +251,7 @@ def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
     return processed
 
 
-def aeWait(fd: FileDes, mask: int, milliseconds: int) -> int:
+def aeWait(fd: int, mask: int, milliseconds: int) -> int:
     """
     (4) poll返回值
     大于0：表示结构体数组fds中有fd描述符的状态发生变化，或可以读取、或可以写入、或出错。并且返回的值表示这些状态有变化的socket描述符的总数量；此时可以对fds数组进行遍历，以寻找那些revents不空的描述符，然后判断这个里面有哪些事件以读取数据。
