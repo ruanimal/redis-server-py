@@ -8,7 +8,7 @@ import socket
 import sys
 import platform
 import argparse
-from typing import List, Callable, Optional as Opt, Tuple, BinaryIO
+from typing import List, Callable, Optional as Opt, Tuple, BinaryIO, Dict
 from dataclasses import dataclass
 from io import BufferedWriter
 from collections import OrderedDict
@@ -743,9 +743,9 @@ def listenToPort(server: RedisServer) -> int:
             server.ipfd.append(s)
         except OSError:
             pass
-            s = anetTcpServer(port, None, backlog)
-            anetNonBlock(s)
-            server.ipfd.append(s)
+        s = anetTcpServer(port, None, backlog)
+        anetNonBlock(s)
+        server.ipfd.append(s)
     for addr in server.bindaddr:
         if ':' in addr:
             s = anetTcp6Server(port, addr, backlog)

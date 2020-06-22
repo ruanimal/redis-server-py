@@ -1,3 +1,4 @@
+import socket
 from .csix import cstr, memcpy, NUL
 from typing import Dict, Any
 
@@ -35,3 +36,17 @@ class _SingletonMeta(type):
 
 class Singleton(metaclass=_SingletonMeta):
     pass
+
+class SocketCache:
+    """socket cache, convert socket fileno to socket object"""
+
+    _cache: Dict[int, socket.socket] = {}
+
+    @classmethod
+    def get(cls, fileno: int):
+        return cls._cache[fileno]
+
+    @classmethod
+    def set(cls, sock: socket.socket):
+        assert sock.fileno() not in cls._cache
+        cls._cache[sock.fileno()] = sock

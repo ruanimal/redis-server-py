@@ -3,6 +3,7 @@ import sys
 import socket
 from typing import NewType, Tuple, Optional as Opt, Union
 from .csix import *
+from .util import SocketCache
 
 Address = Tuple[str, int]
 
@@ -53,6 +54,7 @@ def anetTcpGenericConnect(addr: str, port: int, source_addr: Opt[str], flags: in
         except OSError:
             continue
         anetSetReuseAddr(s)
+        SocketCache.set(s)
         if flags & ANET_CONNECT_NONBLOCK:
             anetNonBlock(s)
         if source_addr:
@@ -90,6 +92,7 @@ def anetUnixGenericConnect(path: str, flags: int) -> socket.socket:
     if flags & ANET_CONNECT_NONBLOCK:
         anetNonBlock(s)
     s.connect(path)
+    SocketCache.set(s)
     return s
 
 def anetUnixConnect(path: str, flags: int) -> socket.socket:
@@ -149,6 +152,7 @@ def _anetTcpServer(port: int, bindaddr: Opt[str], af: int, backlog: int) -> sock
             anetV6Only(s)
         anetSetReuseAddr(s)
         anetListen(s, sockaddr[0], sockaddr[1], backlog)
+        SocketCache.set(s)
     if not s:
         raise AnetErr('start tcp server fail')
     return s
@@ -163,6 +167,7 @@ def anetCreateSocket(domain: int) -> socket.socket:
     try:
         s = socket.socket(domain, socket.SOCK_STREAM)
         anetSetReuseAddr(s)
+        SocketCache.set(s)
         return s
     except OSError:
         s.close()
@@ -176,10 +181,14 @@ def anetUnixServer(path: str, perm: int, backlog: int) -> socket.socket:
     return s
 
 def anetTcpAccept(serversock: socket.socket) -> Tuple[socket.socket, Address]:
-    return serversock.accept()
+    sock, addr = serversock.accept()
+    SocketCache.set(sock)
+    return sock, addr
 
 def anetUnixAccept(serversock: socket.socket) -> Tuple[socket.socket, str]:
-    return serversock.accept()
+    sock, addr = serversock.accept()
+    SocketCache.set(sock)
+    return sock, addr
 
 def anetWrite(fd: socket.socket, buf: cstr) -> None:
     return fd.sendall(buf)
