@@ -6,23 +6,26 @@ __all__ = (
     'aeApiPoll',
     'aeApiName',
     'aeApiResize',
+    'FileDes',
 )
 
 import logging
 import select
 import typing
 import socket
-from typing import Optional as Opt, List, Union
+from typing import Optional as Opt, List, Union, BinaryIO
 
 logger = logging.getLogger(__name__)
 
 if typing.TYPE_CHECKING:
     from .ae import aeEventLoop, timeval
 
+FileDes = Union[socket.socket]
+
 class aeApiState:
     def __init__(self):
-        self.rfds: List[int] = []
-        self.wfds: List[int] = []
+        self.rfds: List[FileDes] = []
+        self.wfds: List[FileDes] = []
         # self._rfds: List[int] = []
         # self._wfds: List[int] = []
 
@@ -38,7 +41,7 @@ def aeApiCreate(eventLoop: 'aeEventLoop') -> int:
 def aeApiFree(eventLoop: 'aeEventLoop') -> None:
     del eventLoop
 
-def aeApiAddEvent(eventLoop: 'aeEventLoop', fd: int, mask: int) -> int:
+def aeApiAddEvent(eventLoop: 'aeEventLoop', fd: FileDes, mask: int) -> int:
     from .ae import AE_READABLE, AE_WRITABLE
     state: aeApiState = eventLoop.apidata
     if mask & AE_READABLE:
@@ -47,7 +50,7 @@ def aeApiAddEvent(eventLoop: 'aeEventLoop', fd: int, mask: int) -> int:
         state.wfds.append(fd)
     return 0
 
-def aeApiDelEvent(eventLoop: 'aeEventLoop', fd: int, mask: int) -> None:
+def aeApiDelEvent(eventLoop: 'aeEventLoop', fd: FileDes, mask: int) -> None:
     from .ae import AE_READABLE, AE_WRITABLE
     state: aeApiState = eventLoop.apidata
     if mask & AE_READABLE:
@@ -67,9 +70,10 @@ def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
     _rfds, _wfds, _ = select.select(state.rfds, state.wfds, [], timeout)
 
     for fd in chain(_rfds, _wfds):
-        assert fd <= eventLoop.maxfd
+        fdno = fd.fileno()
+        assert fdno <= eventLoop.maxfd
         mask = 0
-        fe = eventLoop.events[fd]
+        fe = eventLoop.events[fdno]
         if fe.mask == AE_NONE:
             continue
         if (fe.mask & AE_READABLE):

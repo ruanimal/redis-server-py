@@ -150,7 +150,7 @@ class RedisServer(Singleton):
         self.cluster_enabled: int = 0
         self.port: int = 0
         # self.ipfd_count: int = 0
-        self.sofd: int = 0
+        self.sofd: socket.socket = 0
         self.unixsocket: str = ""
         #  RDB / AOF loading information
         #  We are loading data from disk if true
@@ -532,7 +532,7 @@ def createClient(server: RedisServer, fd: Opt[socket.socket]) -> Opt[RedisClient
         anetEnableTcpNoDelay(fd)
         if server.tcpkeepalive:
             anetKeepAlive(fd, server.tcpkeepalive)
-        if (aeCreateFileEvent(server.el, fd.fileno(), AE_READABLE, readQueryFromClient, c) == AE_ERR):
+        if (aeCreateFileEvent(server.el, fd, AE_READABLE, readQueryFromClient, c) == AE_ERR):
             fd.close()
             return None
 
@@ -743,9 +743,9 @@ def listenToPort(server: RedisServer) -> int:
             server.ipfd.append(s)
         except OSError:
             pass
-            s = anetTcpServer(port, None, backlog)
-            anetNonBlock(s)
-            server.ipfd.append(s)
+        s = anetTcpServer(port, None, backlog)
+        anetNonBlock(s)
+        server.ipfd.append(s)
     for addr in server.bindaddr:
         if ':' in addr:
             s = anetTcp6Server(port, addr, backlog)
@@ -836,10 +836,10 @@ def initServer(server: RedisServer):
         logger.error("Can't create the serverCron time event.")
         exit(1)
     for fd in server.ipfd:
-        if aeCreateFileEvent(server.el, fd.fileno(), AE_READABLE, acceptTcpHandler, None) == AE_ERR:
+        if aeCreateFileEvent(server.el, fd, AE_READABLE, acceptTcpHandler, None) == AE_ERR:
             logger.error("Unrecoverable error creating server.ipfd file event.")
             exit(1)
-    if server.sofd and aeCreateFileEvent(server.el, server.sofd.fileno(), AE_READABLE, acceptUnixHandler, None) == AE_ERR:
+    if server.sofd and aeCreateFileEvent(server.el, server.sofd, AE_READABLE, acceptUnixHandler, None) == AE_ERR:
         logger.error("Unrecoverable error creating server.sofd file event.")
         exit(1)
     if server.aof_state == REDIS_AOF_ON:
