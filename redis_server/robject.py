@@ -34,6 +34,17 @@ class redisObject:
 robj = redisObject
 
 
+def createObject(obj_type: int, ptr) -> robj:
+    from .redis import LRUClock
+    o = redisObject()
+    o.type = obj_type
+    o.encoding = REDIS_ENCODING_RAW
+    o.ptr = ptr
+    o.refcount = 1
+    o.lru = LRUClock()
+    return o
+
+
 def decrRefCount(o: redisObject) -> None:
     assert o.refcount > 0
     if o.refcount == 1:
@@ -55,8 +66,8 @@ REDIS_COMPARE_COLL = (1<<1)
 def compareStringObjectsWithFlags(a: 'robj', b: 'robj', flags: int) -> int:
     assert a.type == REDIS_STRING and b.type == REDIS_STRING
 
-    bufa = bytearray(0 for _ in range(128))
-    bufb = bytearray(0 for _ in range(128))
+    bufa = bytearray(128)
+    bufb = bytearray(128)
 
     if a is b:
         return 0

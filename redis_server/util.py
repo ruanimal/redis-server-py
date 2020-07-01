@@ -6,7 +6,7 @@ def ll2string(s: bytearray, length: int, value: int):
     if length == 0:
         return 0
 
-    buf = bytearray(0 for _ in range(32))
+    buf = bytearray(32)
     v = -value if value < 0 else value
     p = 31
     while True:

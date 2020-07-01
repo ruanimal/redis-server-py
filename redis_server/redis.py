@@ -80,7 +80,28 @@ class redisOpArray:
     pass
 
 class redisCommand(object):
-    pass
+    def __init__(self):
+        # 命令名字
+        self.name: str = ''
+        # 实现函数
+        self.proc: 'redisCommandProc' = None
+        # 参数个数
+        self.arity: int = 0
+        # 字符串表示的 FLAG
+        self.sflags: str = ''       # /* Flags as string representation, one char per flag. */
+        # 实际 FLAG
+        self.flags: int = 0      # /* The actual flags, obtained from the 'sflags' field. */
+        # 从命令中判断命令的键参数。在 Redis 集群转向时使用。
+        self.getkeys_proc: 'redisGetKeysProc' = None
+        # 指定哪些参数是 key
+        self.firstkey: int = 0   # /* The first argument that's a key (0 = no keys) */
+        self.lastkey: int = 0    # /* The last argument that's a key */
+        self.keystep: int = 0    # /* The step between first and last key */
+        # 统计信息
+        # microseconds 记录了命令执行耗费的总毫微秒数
+        # calls 是命令被执行的总次数
+        self.microseconds: int = 0
+        self.calls: int = 0
 
 @dataclass
 class saveparam:
@@ -138,7 +159,7 @@ class RedisServer(Singleton):
         self.slaves: list = []
         self.monitors: list = []        # /* List of slaves and MONITORs */
         # 服务器的当前客户端，仅用于崩溃报告
-        self.current_client: RedisClient = None    # /* Current client, only used on crash report */
+        self.current_client: Opt[RedisClient] = None    # /* Current client, only used on crash report */
         self.clients_paused: int = 0             # /* True if clients are currently paused */
         self.clients_pause_end_time: int = 0    # /* Time when we undo clients_paused */
         # 网络错误
@@ -374,7 +395,7 @@ class RedisServer(Singleton):
         #  Number of clients blocked by lists
         self.bpop_blocked_clients: int = 0
         #  list of clients to unblock before next loop
-        self.unblocked_clients: List = []
+        self.unblocked_clients: list = []
         #  List of readyList structures for BLPOP & co
         self.ready_keys: List = []
         #  Sort parameters - qsort_r() is only available under BSD so we* have to take this state global, in order to pass it to sortCompare()
@@ -451,8 +472,8 @@ class RedisClient(object):
         # // 参数对象数组
         self.argv: List[redisObject] = []
         # // 记录被客户端执行的命令
-        self.cmd: redisCommand = None
-        self.lastcmd: redisCommand = None
+        self.cmd: Opt[redisCommand] = None
+        self.lastcmd: Opt[redisCommand] = None
         # // 请求的类型：内联命令还是多条命令
         self.reqtype: int = 0
         # // 剩余未读取的命令内容数量
@@ -521,6 +542,15 @@ class RedisClient(object):
         self.bufpos: int = 0
         # // 回复缓冲区
         self.buf: bytearray = bytearray(REDIS_REPLY_CHUNK_BYTES)
+
+    @property
+    def argc(self) -> int:
+        return len(self.argv)
+
+
+def processCommand(c: RedisClient) -> int:
+    # TODO(rlj): something to do.
+    pass
 
 def selectDb(c: RedisClient, idx: int):
     pass
@@ -620,6 +650,10 @@ def checkForSentinelMode() -> int:
 
 def getLRUClock() -> int:
     return int(int(time.time() * 1000) / REDIS_LRU_CLOCK_RESOLUTION) & REDIS_LRU_CLOCK_MAX
+
+def LRUClock() -> int:
+    server = RedisServer()
+    return (1000/server.hz <= REDIS_LRU_CLOCK_RESOLUTION) and server.lruclock or getLRUClock()
 
 def initServerConfig(server: RedisServer):
     ## 服务器状态
@@ -1061,7 +1095,6 @@ def beforeSleep(eventLoop: aeEventLoop) -> None:
 
 def main():
     server = RedisServer()
-    print(server.__class__._instances)
     locale.setlocale(locale.LC_COLLATE, '')
     random.seed(int(time.time()) ^ os.getpid())
     tv = timeval.from_datetime()
@@ -1077,8 +1110,8 @@ def main():
     if (server.sentinel_mode):
         initSentinelConfig()
         initSentinel()
-    # if (server.daemonize):
-    #     daemonize()
+    if (server.daemonize):
+        daemonize()
 
     initServer(server)
     # 为服务器进程设置名字
@@ -1100,10 +1133,3 @@ def main():
     aeMain(server.el)
     aeDeleteEventLoop(server.el)
     return 0
-
-# if __name__ == '__main__':
-#     # parse_server_args()
-#     # redisAsciiArt()
-#     # import ipdb; ipdb.set_trace()
-#     logging.basicConfig(level='INFO')
-#     main()

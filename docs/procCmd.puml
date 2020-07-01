@@ -1,0 +1,27 @@
+@startuml 命令执行逻辑
+用户 -> 店长: 询问：iphone11 有吗？
+activate 店长
+
+' note left of 用户: 我很暴躁
+' note left of 店长: 巧了，我也是
+
+店长 -> 服务员: 命令：去查下库存
+activate 服务员
+服务员 -> 库存系统: 查询库存
+activate 库存系统
+return 库存量
+deactivate 库存系统
+alt "库存量 > 0"
+	服务员 -> 店长: 通知：货多得很
+else
+	服务员 -> 店长: 通知：没货了
+end
+deactivate 服务员
+
+alt "库存量 <= 0"
+	店长 -> 用户: 不凑巧，买完了
+    用户 -> 店长: 没货还挂着商品，耍人吗???
+    用户 -> 店长: 愉快地打了一架
+end
+店长 -> 用户: Done
+@enduml

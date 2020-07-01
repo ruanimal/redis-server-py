@@ -141,6 +141,38 @@ REDIS_BLOCKED_NONE = 0   # /* Not blocked, no REDIS_BLOCKED flag set. */
 REDIS_BLOCKED_LIST = 1   # /* BLPOP & co. */
 REDIS_BLOCKED_WAIT = 2   # /* WAIT for synchronous replication. */
 
+# /* Client request types */
+REDIS_REQ_INLINE = 1
+REDIS_REQ_MULTIBULK = 2
+
+# /* Client flags */
+REDIS_SLAVE = (1<<0)    #  /* This client is a slave server */
+REDIS_MASTER = (1<<1)   # /* This client is a master server */
+REDIS_MONITOR = (1<<2)  #/* This client is a slave monitor, see MONITOR */
+REDIS_MULTI = (1<<3)    #  /* This client is in a MULTI context */
+REDIS_BLOCKED = (1<<4)  #/* The client is waiting in a blocking operation */
+REDIS_DIRTY_CAS = (1<<5)    #/* Watched keys modified. EXEC will fail. */
+REDIS_CLOSE_AFTER_REPLY = (1<<6)    #/* Close after writing entire reply. */
+REDIS_UNBLOCKED = (1<<7)    #/* This client was unblocked and is stored in server.unblocked_clients */
+REDIS_LUA_CLIENT = (1<<8)   #/* This is a non connected client used by Lua */
+REDIS_ASKING = (1<<9)   #    /* Client issued the ASKING command */
+REDIS_CLOSE_ASAP = (1<<10)     #/* Close this client ASAP */
+REDIS_UNIX_SOCKET = (1<<11)     #/* Client connected via Unix domain socket */
+REDIS_DIRTY_EXEC = (1<<12)  # /* EXEC will fail for errors while queueing */
+REDIS_MASTER_FORCE_REPLY = (1<<13)  # /* Queue replies even if is master */
+REDIS_FORCE_AOF = (1<<14)   #  /* Force AOF propagation of current cmd. */
+REDIS_FORCE_REPL = (1<<15)  # /* Force replication of current cmd. */
+REDIS_PRE_PSYNC = (1<<16)   #  /* Instance don't understand PSYNC. */
+REDIS_READONLY = (1<<17)    #   /* Cluster client is in read-only state. */
+
+# /* Log levels */
+REDIS_DEBUG = 0
+REDIS_VERBOSE = 1
+REDIS_NOTICE = 2
+REDIS_WARNING = 3
+REDIS_LOG_RAW = (1<<10)
+REDIS_DEFAULT_VERBOSITY = REDIS_NOTICE
+
 # /* 默认的服务器配置值 */
 class ServerConfig:
     REDIS_DEFAULT_HZ =        10     # /* Time interrupt calls/sec. */

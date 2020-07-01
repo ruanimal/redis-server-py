@@ -229,7 +229,7 @@ def zipPrevEncodeLengthForceLarge(p: Opt[cstrptr], length: int) -> None:
 
 def zipEncodeLength(p: Opt[cstrptr], encoding: int, rawlen: int) -> int:
     length = 1
-    buf = bytearray(0 for _ in range(5))
+    buf = bytearray(5)
     if ZIP_IS_STR(encoding):
         if rawlen <= 0x3f:
             if not p:

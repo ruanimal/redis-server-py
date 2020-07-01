@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 
-from typing import Union
+from typing import Union, List
 from .csix import *
 
 
@@ -200,3 +200,16 @@ def sdscmp(s1: sds, s2: sds) -> int:
     if cmp == 0:
         return l1 - l2
     return cmp
+
+def sdssplitargs(line: sds) -> List[sds]:
+    parts = line.buf.split()
+    if not parts:
+        return []
+    assert parts[-1][0] == NUL
+    parts.pop()
+    res = []
+    for i in parts:
+        s = Sdshdr(len(i), 0, i)
+        s.buf.append(NUL)
+        res.append(s)
+    return res

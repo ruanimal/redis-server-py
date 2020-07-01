@@ -296,7 +296,7 @@ def aeMain(eventLoop: aeEventLoop) -> None:
 def aeGetApiName() -> str:
     return aeApiName()
 
-def aeSetBeforeSleepProc(eventLoop: aeEventLoop, beforesleep) -> None:
+def aeSetBeforeSleepProc(eventLoop: aeEventLoop, beforesleep: Callable[[aeEventLoop], None]) -> None:
     eventLoop.beforesleep = beforesleep
 
 def aeGetSetSize(eventLoop: aeEventLoop) -> int:
