@@ -50,3 +50,7 @@ class SocketCache:
     def set(cls, sock: socket.socket):
         assert sock.fileno() not in cls._cache
         cls._cache[sock.fileno()] = sock
+
+def get_server():
+    from .redis import RedisServer
+    return RedisServer()

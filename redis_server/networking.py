@@ -2,12 +2,14 @@ import socket
 import errno
 import typing
 from logging import getLogger
-from .ae import aeEventLoop
+from .ae import aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
 from .anet import anetTcpAccept
 from .robject import redisObject, incrRefCount, equalStringObjects, createObject, REDIS_STRING
-from .util import SocketCache
+from .util import SocketCache, get_server
 from .config import *
 from .sds import sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs
+from .csix import cstr
+from .adlist import listLength
 
 if typing.TYPE_CHECKING:
     from .redis import RedisClient
@@ -21,8 +23,7 @@ def askingCommand():
     pass
 
 def clientsArePaused() -> int:
-    from .redis import RedisServer
-    server = RedisServer()
+    server = get_server()
     if server.clients_paused and server.clients_pause_end_time < server.unixtime:
         server.clients_paused = 0
         for c in server.clients:
@@ -39,8 +40,7 @@ def freeClientArgv(c: 'RedisClient') -> None:
     c.cmd = None
 
 def setProtocolError(c: 'RedisClient', pos: int) -> None:
-    from .redis import RedisServer
-    server = RedisServer()
+    server = get_server()
     if server.verbosity >= REDIS_VERBOSE:
         logger.info("Protocol error from client: %s", c)
     c.flags |= REDIS_CLOSE_AFTER_REPLY
@@ -57,8 +57,7 @@ def resetClient(c: 'RedisClient') -> None:
         c.flags &= (~REDIS_ASKING)
 
 def processInlineBuffer(c: 'RedisClient') -> int:
-    from .redis import RedisServer
-    server = RedisServer()
+    server = get_server()
     idx = c.querybuf.buf.find(b'\n')
     if idx == -1 or idx == 0:   # buffer 不包含换行
         if sdslen(c.querybuf) > REDIS_INLINE_MAX_SIZE:
@@ -115,8 +114,8 @@ def processInputBuffer(c: 'RedisClient') -> None:
 
 
 def readQueryFromClient(el: aeEventLoop, fd: int, privdata: 'RedisClient', mask: int) -> None:
-    from .redis import RedisServer, freeClient
-    server = RedisServer()
+    from .redis import freeClient
+    server = get_server()
     c = server.current_client = privdata
 
     readlen = REDIS_IOBUF_LEN
@@ -188,5 +187,59 @@ def acceptTcpHandler(el: aeEventLoop, fd: int, privdata, mask: int):
 def acceptUnixHandler(*args):
     pass
 
+def sendReplyToClient():
+    # TODO(rlj): something to do.
+    pass
+
+def prepareClientToWrite(c: 'RedisClient') -> int:
+    server = get_server()
+    if c.flags & REDIS_LUA_CLIENT:
+        return REDIS_OK
+    if (c.flags & REDIS_MASTER) and not(c.flags & REDIS_MASTER_FORCE_REPLY):
+        return REDIS_ERR
+    if not c.fd or c.fd.fileno() <= 0:
+        return REDIS_ERR
+    if (c.bufpos == 0 and listLength(c.reply) == 0
+        and (c.replstate in (REDIS_REPL_NONE, REDIS_REPL_ONLINE))
+        and aeCreateFileEvent(server.el, c.fd.fileno(), AE_WRITABLE, sendReplyToClient, c) == AE_ERR
+        ):
+        return REDIS_ERR
+    return REDIS_OK
+
+
+def _addReplyToBuffer(c: 'RedisClient', s: cstr, length: int) -> int:
+    available = len(c.buf) - c.bufpos
+    if c.flags & REDIS_CLOSE_AFTER_REPLY:
+        return REDIS_OK
+    if listLength(c.reply) > 0:
+        return REDIS_ERR
+    if length > available:
+        return REDIS_ERR
+    c.buf[c.bufpos:c.bufpos+length] = s[:length]
+    c.bufpos += length
+    return REDIS_OK
+
+
+def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> int:
+    # TODO(rlj): something to do.
+    pass
+
+
+def addReplyString(c: 'RedisClient', s: cstr, length: int) -> None:
+    if prepareClientToWrite(c) != REDIS_OK:
+        return
+    if _addReplyToBuffer(c, s, length) != REDIS_OK:
+        _addReplyStringToList(c, s, length)
+
+
+def addReplyErrorLength(c: 'RedisClient', s: cstr, length: int) -> None:
+    addReplyString(c, b"-ERR ", 5)
+    addReplyString(c, s, length)
+    addReplyString(c, b"\r\n", 2)
+
 def addReplyError(c: 'RedisClient', err: str) -> None:
+    msg = err.encode()
+    addReplyErrorLength(c, msg, len(msg))
+
+def addReply(c: 'RedisClient', obj: redisObject) -> None:
     pass

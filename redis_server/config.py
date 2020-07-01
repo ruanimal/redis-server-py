@@ -173,6 +173,12 @@ REDIS_WARNING = 3
 REDIS_LOG_RAW = (1<<10)
 REDIS_DEFAULT_VERBOSITY = REDIS_NOTICE
 
+# Slave replication state - from the point of view of the master.
+REDIS_REPL_WAIT_BGSAVE_START = 6        # /* We need to produce a new RDB file. */
+REDIS_REPL_WAIT_BGSAVE_END = 7      # /* Waiting RDB file creation to finish. */
+REDIS_REPL_SEND_BULK = 8        # /* Sending RDB file to slave. */
+REDIS_REPL_ONLINE = 9       # /* RDB file transmitted, sending just updates. */
+
 # /* 默认的服务器配置值 */
 class ServerConfig:
     REDIS_DEFAULT_HZ =        10     # /* Time interrupt calls/sec. */
