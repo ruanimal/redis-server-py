@@ -1,7 +1,7 @@
 from typing import List, Callable, Optional as Opt, Tuple
-from .sds import sdslen
+from .sds import sdslen, sdsnewlen
 from .util import ll2string
-from .csix import ptr2long, strcoll, memcmp
+from .csix import ptr2long, strcoll, memcmp, cstr
 
 REDIS_LRU_BITS = 24
 
@@ -45,11 +45,28 @@ def createObject(obj_type: int, ptr) -> robj:
     return o
 
 
+def createRawStringObject(ptr: cstr, length: int) -> robj:
+    return createObject(REDIS_STRING, sdsnewlen(ptr, length))
+
+def createEmbeddedStringObject(ptr: cstr, length: int) -> robj:
+    o = createRawStringObject(ptr, length)
+    o.encoding = REDIS_ENCODING_EMBSTR
+    return o
+
+REDIS_ENCODING_EMBSTR_SIZE_LIMIT = 39
+def createStringObject(ptr: cstr, length: int) -> robj:
+    if (len <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT):
+        return createEmbeddedStringObject(ptr, length)
+    else:
+        return createRawStringObject(ptr, length)
+
+
 def decrRefCount(o: redisObject) -> None:
     assert o.refcount > 0
     if o.refcount == 1:
-        # TODO: check need job or not
-        pass
+        # NOTE: collect object
+        o.refcount = 0
+        del o
     else:
         o.refcount -= 1
 

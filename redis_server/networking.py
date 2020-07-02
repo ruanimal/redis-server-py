@@ -4,12 +4,15 @@ import typing
 from logging import getLogger
 from .ae import aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
 from .anet import anetTcpAccept
-from .robject import redisObject, incrRefCount, equalStringObjects, createObject, REDIS_STRING
+from .robject import (
+    redisObject, incrRefCount, equalStringObjects, createObject, compareStringObjects,
+    REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR,
+)
 from .util import SocketCache, get_server
 from .config import *
-from .sds import sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs
+from .sds import sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds
 from .csix import cstr
-from .adlist import listLength
+from .adlist import listLength, listAddNodeTail
 
 if typing.TYPE_CHECKING:
     from .redis import RedisClient
@@ -220,10 +223,20 @@ def _addReplyToBuffer(c: 'RedisClient', s: cstr, length: int) -> int:
     return REDIS_OK
 
 
-def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> int:
-    # TODO(rlj): something to do.
-    pass
+def getStringObjectSdsUsedMemory(o: redisObject) -> int:
+    # NOTE: redis 应该是为了统计使用内存的大小, Python简单处理
+    assert o.type == REDIS_STRING and isinstance(o.ptr, sds)
+    return len(o.ptr.buf)
 
+def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> int:
+    if c.flags & REDIS_CLOSE_AFTER_REPLY:
+        return
+    if listLength(c.reply) == 0:
+        o = compareStringObjects(s, length)
+        incrRefCount(o)
+        listAddNodeTail(c.reply, o)
+        c.reply_bytes += getStringObjectSdsUsedMemory(o)
+        # TODO(rlj): something to do.
 
 def addReplyString(c: 'RedisClient', s: cstr, length: int) -> None:
     if prepareClientToWrite(c) != REDIS_OK:
