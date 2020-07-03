@@ -1,6 +1,10 @@
 import socket
+import typing
 from .csix import cstr, memcpy, NUL
 from typing import Dict, Any
+
+if typing.TYPE_CHECKING:
+    from .redis import RedisServer
 
 def ll2string(s: bytearray, length: int, value: int):
     if length == 0:
@@ -51,6 +55,6 @@ class SocketCache:
         assert sock.fileno() not in cls._cache
         cls._cache[sock.fileno()] = sock
 
-def get_server():
+def get_server() -> 'RedisServer':
     from .redis import RedisServer
     return RedisServer()

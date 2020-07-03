@@ -5,14 +5,17 @@ from logging import getLogger
 from .ae import aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
 from .anet import anetTcpAccept
 from .robject import (
-    redisObject, incrRefCount, equalStringObjects, createObject, compareStringObjects,
-    REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR,
+    redisObject, incrRefCount, equalStringObjects, createObject, createStringObject,
+    decrRefCount, dupStringObject, REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR,
 )
 from .util import SocketCache, get_server
 from .config import *
-from .sds import sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds
-from .csix import cstr
-from .adlist import listLength, listAddNodeTail
+from .sds import (
+    sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds,
+    sdscatlen,
+)
+from .csix import cstr, ULONG_MASK
+from .adlist import listLength, listAddNodeTail, listNodeValue, listLast, rList, listNode
 
 if typing.TYPE_CHECKING:
     from .redis import RedisClient
@@ -228,15 +231,59 @@ def getStringObjectSdsUsedMemory(o: redisObject) -> int:
     assert o.type == REDIS_STRING and isinstance(o.ptr, sds)
     return len(o.ptr.buf)
 
-def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> int:
+
+def freeClientAsync(c: 'RedisClient') -> None:
+    if c.flags & REDIS_CLOSE_ASAP:
+        return
+    c.flags |= REDIS_CLOSE_ASAP
+    server = get_server()
+    server.clients_to_close.append(c)
+
+def checkClientOutputBufferLimits(c: 'RedisClient') -> int:
+    # TODO(rlj): something to do.
+    pass
+
+def asyncCloseClientOnOutputBufferLimitReached(c: 'RedisClient') -> None:
+    assert c.reply_bytes < ULONG_MASK - 1024 * 64
+    if c.reply_bytes == 0 or c.flags & REDIS_CLOSE_ASAP:
+        return
+    if checkClientOutputBufferLimits(c):
+        freeClientAsync(c)
+        logger.warning("Client %s scheduled to be closed ASAP for overcoming of output buffer limits.", c)
+
+
+def dupLastObjectIfNeeded(reply: rList):
+    assert listLength(reply) > 0
+    ln = listLast(reply)
+    cur = listNodeValue(ln)   # type: ignore
+    if cur.refcount > 1:
+        new = dupStringObject(cur)
+        decrRefCount(cur)
+        ln.value = new   # type: ignore
+    return listNodeValue(ln)   # type: ignore
+
+def _addReplySdsToList():
+    pass
+
+def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> None:
     if c.flags & REDIS_CLOSE_AFTER_REPLY:
         return
     if listLength(c.reply) == 0:
-        o = compareStringObjects(s, length)
-        incrRefCount(o)
+        o = createStringObject(s, length)
         listAddNodeTail(c.reply, o)
         c.reply_bytes += getStringObjectSdsUsedMemory(o)
-        # TODO(rlj): something to do.
+    else:
+        tail: redisObject = listNodeValue(listLast(c.reply))   # type: ignore
+        if (tail.ptr != None and tail.encoding == REDIS_ENCODING_RAW and
+            sdslen(tail.ptr) + length <= REDIS_REPLY_CHUNK_BYTES):
+            tail.ptr = dupLastObjectIfNeeded(c.reply).ptr
+            sdscatlen(tail.ptr, s, length)
+        else:
+            o = createStringObject(s, length)
+            listAddNodeTail(c.reply, o)
+            c.reply_bytes += getStringObjectSdsUsedMemory(o)
+    asyncCloseClientOnOutputBufferLimitReached(c)
+
 
 def addReplyString(c: 'RedisClient', s: cstr, length: int) -> None:
     if prepareClientToWrite(c) != REDIS_OK:

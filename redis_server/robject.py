@@ -55,7 +55,7 @@ def createEmbeddedStringObject(ptr: cstr, length: int) -> robj:
 
 REDIS_ENCODING_EMBSTR_SIZE_LIMIT = 39
 def createStringObject(ptr: cstr, length: int) -> robj:
-    if (len <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT):
+    if (length <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT):
         return createEmbeddedStringObject(ptr, length)
     else:
         return createRawStringObject(ptr, length)
@@ -130,3 +130,17 @@ def dictRedisObjectDestructor(privdata, val: Opt[redisObject]):
     if not val:
         return
     decrRefCount(val)
+
+def dupStringObject(o: robj) -> robj:
+    assert o.type == REDIS_STRING
+    if o.encoding == REDIS_ENCODING_RAW:
+        return createRawStringObject(o.ptr, sdslen(o.ptr))
+    elif o.encoding == REDIS_ENCODING_EMBSTR:
+        return createEmbeddedStringObject(o.ptr, sdslen(o.ptr))
+    elif o.encoding == REDIS_ENCODING_INT:
+        d = createObject(REDIS_STRING, None)
+        d.encoding = REDIS_ENCODING_INT
+        d.ptr = o.ptr
+        return d
+    else:
+        raise ValueError("Wrong encoding: %r", o.encoding)
