@@ -144,3 +144,15 @@ def dupStringObject(o: robj) -> robj:
         return d
     else:
         raise ValueError("Wrong encoding: %r", o.encoding)
+
+def getDecodedObject(o: robj) -> robj:
+    if sdsEncodedObject(o):
+        incrRefCount(o)
+        return o
+    if o.type == REDIS_STRING and o.encoding == REDIS_ENCODING_INT:
+        buf = bytearray(32)
+        ll2string(buf, 32, o.ptr)
+        dec = createStringObject(buf, len(buf))
+        return dec
+    else:
+        raise ValueError("Unknown encoding type")

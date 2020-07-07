@@ -6,7 +6,7 @@ from typing import Dict, Any
 if typing.TYPE_CHECKING:
     from .redis import RedisServer
 
-def ll2string(s: bytearray, length: int, value: int):
+def ll2string(s: bytearray, length: int, value: int) -> int:
     if length == 0:
         return 0
 

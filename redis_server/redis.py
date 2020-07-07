@@ -549,8 +549,9 @@ class RedisClient(object):
 
 
 def processCommand(c: RedisClient) -> int:
-    # TODO(rlj): something to do.
-    pass
+    if c.argv[0].ptr.lowereq('quit'):
+        pass
+    return 0   # TODO(rlj): something to do.
 
 def selectDb(c: RedisClient, idx: int):
     pass

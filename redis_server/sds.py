@@ -29,6 +29,12 @@ class Sdshdr(object):
     def __delitem__(self, key):
         return self.buf.__delitem__(key)
 
+    def eq(self, b: str) -> bool:
+        return self.buf[:self.len] == b.encode('utf8')
+
+    def lowereq(self, b: str) -> bool:
+        return self.buf[:self.len].lower() == b.encode('utf8').lower()
+
     # def __missing__(self, key):
     #     return self.buf.__missing__(key)
 

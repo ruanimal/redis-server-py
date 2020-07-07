@@ -6,13 +6,14 @@ from .ae import aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
 from .anet import anetTcpAccept
 from .robject import (
     redisObject, incrRefCount, equalStringObjects, createObject, createStringObject,
-    decrRefCount, dupStringObject, REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR,
+    decrRefCount, dupStringObject, sdsEncodedObject, getDecodedObject,
+    REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR, REDIS_ENCODING_INT
 )
-from .util import SocketCache, get_server
+from .util import SocketCache, get_server, ll2string
 from .config import *
 from .sds import (
     sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds,
-    sdscatlen,
+    sdscatlen, sdsfree
 )
 from .csix import cstr, ULONG_MASK
 from .adlist import listLength, listAddNodeTail, listNodeValue, listLast, rList, listNode
@@ -262,8 +263,25 @@ def dupLastObjectIfNeeded(reply: rList):
         ln.value = new   # type: ignore
     return listNodeValue(ln)   # type: ignore
 
-def _addReplySdsToList():
-    pass
+def _addReplySdsToList(c: 'RedisClient', s: sds) -> None:
+    if c.flags & REDIS_CLOSE_AFTER_REPLY:
+        sdsfree(s)
+        return
+
+    if listLength(c.reply) == 0:
+        listAddNodeTail(c.reply, createObject(REDIS_STRING, s))
+        c.reply_bytes += len(s.buf)
+    else:
+        tail: redisObject = listNodeValue(listLast(c.reply))   # type: ignore
+        if (tail.ptr != None and tail.encoding == REDIS_ENCODING_RAW and
+            sdslen(tail.ptr) + sdslen(s) <= REDIS_REPLY_CHUNK_BYTES):
+            tail.ptr = dupLastObjectIfNeeded(c.reply).ptr
+            sdscatlen(tail.ptr, s, sdslen(s))
+        else:
+            listAddNodeTail(c.reply, createObject(REDIS_STRING, s))
+            c.reply_bytes += len(s.buf)
+    asyncCloseClientOnOutputBufferLimitReached(c)
+
 
 def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> None:
     if c.flags & REDIS_CLOSE_AFTER_REPLY:
@@ -285,6 +303,27 @@ def _addReplyStringToList(c: 'RedisClient', s: cstr, length: int) -> None:
     asyncCloseClientOnOutputBufferLimitReached(c)
 
 
+def _addReplyObjectToList(c: 'RedisClient', o: redisObject) -> None:
+    if c.flags & REDIS_CLOSE_AFTER_REPLY:
+        return
+    if listLength(c.reply) == 0:
+        incrRefCount(o)
+        listAddNodeTail(c.reply, o)
+        c.reply_bytes += getStringObjectSdsUsedMemory(o)
+    else:
+        tail = listNodeValue(listLast(c.reply))   # type: ignore
+        if (tail.ptr != None and tail.encoding == REDIS_ENCODING_RAW and
+            sdslen(tail.ptr) + sdslen(o.ptr) <= REDIS_REPLY_CHUNK_BYTES):
+            c.reply_bytes -= sdslen(tail.ptr)
+            tail.ptr = dupLastObjectIfNeeded(c.reply).ptr
+            sdscatlen(tail.ptr, o.ptr, sdslen(o.ptr))
+            c.reply_bytes += sdslen(tail.ptr)
+        else:
+            incrRefCount(o)
+            listAddNodeTail(c.reply, o)
+            c.reply_bytes += getStringObjectSdsUsedMemory(o)
+    asyncCloseClientOnOutputBufferLimitReached(c)
+
 def addReplyString(c: 'RedisClient', s: cstr, length: int) -> None:
     if prepareClientToWrite(c) != REDIS_OK:
         return
@@ -302,4 +341,20 @@ def addReplyError(c: 'RedisClient', err: str) -> None:
     addReplyErrorLength(c, msg, len(msg))
 
 def addReply(c: 'RedisClient', obj: redisObject) -> None:
-    pass
+    if prepareClientToWrite(c) != REDIS_OK:
+        return
+    if sdsEncodedObject(obj):
+        if _addReplyToBuffer(c, obj.ptr, sdslen(obj.ptr)) != REDIS_OK:
+            _addReplyObjectToList(c, obj)
+    elif obj.encoding == REDIS_ENCODING_INT:
+        if listLength(c.reply) == 0 and (len(c.buf) - c.bufpos) >= 32:
+            buf = bytearray(32)
+            length = ll2string(buf, len(buf), obj.ptr)
+            if _addReplyToBuffer(c, buf, length) == REDIS_OK:
+                return
+        obj = getDecodedObject(obj)
+        if _addReplyToBuffer(c, obj.ptr, sdslen(obj.ptr)) != REDIS_OK:
+            _addReplyObjectToList(c, obj)
+        decrRefCount(obj)
+    else:
+        raise ValueError("Wrong obj->encoding in addReply(): %r", obj)
