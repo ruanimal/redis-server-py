@@ -49,7 +49,9 @@ def sdsnewlen(init: cstr, initlen: int) -> sds:
 def sdsempty() -> sds:
     return sdsnewlen(b'', 0)
 
-def sdsnew(init: cstr) -> sds:
+def sdsnew(init: Union[cstr, str]) -> sds:
+    if isinstance(init, str):
+        init = init.encode('utf8')
     return sdsnewlen(init, len(init))
 
 def sdsfree(s: sds) -> None:

@@ -179,6 +179,28 @@ REDIS_REPL_WAIT_BGSAVE_END = 7      # /* Waiting RDB file creation to finish. */
 REDIS_REPL_SEND_BULK = 8        # /* Sending RDB file to slave. */
 REDIS_REPL_ONLINE = 9       # /* RDB file transmitted, sending just updates. */
 
+# 命令标志
+REDIS_CMD_WRITE = 1         # /* "w" flag */
+REDIS_CMD_READONLY = 2          # /* "r" flag */
+REDIS_CMD_DENYOOM = 4       # /* "m" flag */
+REDIS_CMD_NOT_USED_1 = 8        # /* no longer used flag */
+REDIS_CMD_ADMIN = 16        # /* "a" flag */
+REDIS_CMD_PUBSUB = 32       # /* "p" flag */
+REDIS_CMD_NOSCRIPT =  64        # /* "s" flag */
+REDIS_CMD_RANDOM = 128          # /* "R" flag */
+REDIS_CMD_SORT_FOR_SCRIPT = 256         # /* "S" flag */
+REDIS_CMD_LOADING = 512         # /* "l" flag */
+REDIS_CMD_STALE = 1024          # /* "t" flag */
+REDIS_CMD_SKIP_MONITOR = 2048       # /* "M" flag */
+REDIS_CMD_ASKING = 4096         # /* "k" flag */
+
+# /* Command call flags, see call() function */
+REDIS_CALL_NONE = 0
+REDIS_CALL_SLOWLOG = 1
+REDIS_CALL_STATS = 2
+REDIS_CALL_PROPAGATE = 4
+REDIS_CALL_FULL = (REDIS_CALL_SLOWLOG | REDIS_CALL_STATS | REDIS_CALL_PROPAGATE)
+
 # /* 默认的服务器配置值 */
 class ServerConfig:
     REDIS_DEFAULT_HZ =        10     # /* Time interrupt calls/sec. */

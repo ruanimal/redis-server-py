@@ -14,7 +14,7 @@ from io import BufferedWriter
 from collections import OrderedDict
 from itertools import chain
 
-from .csix import timeval
+from .csix import timeval, int2cstr
 from .ae import (
     aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop, aeCreateEventLoop,
     aeCreateTimeEvent, aeCreateFileEvent, AE_ERR, AE_READABLE,
@@ -22,10 +22,13 @@ from .ae import (
 from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer, anetEnableTcpNoDelay, anetKeepAlive
 from .config import ServerConfig as Conf
 from .config import *
-from .adlist import rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod
+from .adlist import (
+    rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod,
+    listLength,
+)
 from .rdict import rDict, dictCreate, dictSetHashFunctionSeed
-from .sds import sds, sdsempty
-from .robject import redisObject, decrRefCountVoid
+from .sds import sds, sdsempty, sdsnew
+from .robject import redisObject, decrRefCountVoid, createStringObject, createObject, REDIS_STRING, REDIS_ENCODING_INT
 from .db import RedisDB, dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
 from .pubsub import freePubsubPattern, listMatchPubsubPattern
 from .aof import aofRewriteBufferReset
@@ -34,7 +37,7 @@ from .networking import (
     listMatchObjects,
 )
 from .multi import initClientMultiState
-from .util import Singleton
+from .util import Singleton, ll2string, get_server
 
 __version__ = '0.0.1'
 
@@ -397,7 +400,7 @@ class RedisServer(Singleton):
         #  list of clients to unblock before next loop
         self.unblocked_clients: list = []
         #  List of readyList structures for BLPOP & co
-        self.ready_keys: List = []
+        self.ready_keys: rList = None
         #  Sort parameters - qsort_r() is only available under BSD so we* have to take this state global, in order to pass it to sortCompare()
         self.sort_desc: int = 0
         self.sort_alpha: int = 0
@@ -548,10 +551,155 @@ class RedisClient(object):
         return len(self.argv)
 
 
+class sharedObjects(Singleton):
+    def __init__(self):
+        # # 常用回复
+        self.crlf: redisObject = createObject(REDIS_STRING, sdsnew("\r\n"))
+        self.ok: redisObject = createObject(REDIS_STRING, sdsnew("+OK\r\n"))
+        self.err: redisObject = createObject(REDIS_STRING, sdsnew("-ERR\r\n"))
+        self.emptybulk: redisObject = createObject(REDIS_STRING, sdsnew("$0\r\n\r\n"))
+        self.czero: redisObject = createObject(REDIS_STRING, sdsnew(":0\r\n"))
+        self.cone: redisObject = createObject(REDIS_STRING, sdsnew(":1\r\n"))
+        self.cnegone: redisObject = createObject(REDIS_STRING, sdsnew(":-1\r\n"))
+        self.nullbulk: redisObject = createObject(REDIS_STRING, sdsnew("$-1\r\n"))
+        self.nullmultibulk: redisObject = createObject(REDIS_STRING, sdsnew("*-1\r\n"))
+        self.emptymultibulk: redisObject = createObject(REDIS_STRING, sdsnew("*0\r\n"))
+        self.pong: redisObject = createObject(REDIS_STRING, sdsnew("+PONG\r\n"))
+        self.queued: redisObject = createObject(REDIS_STRING, sdsnew("+QUEUED\r\n"))
+        self.emptyscan: redisObject = createObject(REDIS_STRING, sdsnew("*2\r\n$1\r\n0\r\n*0\r\n"))
+        # 常用错误回复
+        self.wrongtypeerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"))
+        self.nokeyerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-ERR no such key\r\n"))
+        self.syntaxerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-ERR syntax error\r\n"))
+        self.sameobjecterr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-ERR source and destination objects are the same\r\n"))
+        self.outofrangeerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-ERR index out of range\r\n"))
+        self.noscripterr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-NOSCRIPT No matching script. Please use EVAL.\r\n"))
+        self.loadingerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-LOADING Redis is loading the dataset in memory\r\n"))
+        self.slowscripterr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-BUSY Redis is busy running a script. You can only call SCRIPT KILL or SHUTDOWN NOSAVE.\r\n"))
+        self.masterdownerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-MASTERDOWN Link with MASTER is down and slave-serve-stale-data is set to 'no'.\r\n"))
+        self.bgsaveerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-MISCONF Redis is configured to save RDB snapshots, but is currently not able to persist on disk. "
+            "Commands that may modify the data set are disabled. "
+            "Please check Redis logs for details about the error.\r\n"))
+        self.roslaveerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-READONLY You can't write against a read only slave.\r\n"))
+        self.noautherr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-NOAUTH Authentication required.\r\n"))
+        self.oomerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-OOM command not allowed when used memory > 'maxmemory'.\r\n"))
+        self.execaborterr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-EXECABORT Transaction discarded because of previous errors.\r\n"))
+        self.noreplicaserr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-NOREPLICAS Not enough good slaves to write.\r\n"))
+        self.busykeyerr: redisObject = createObject(REDIS_STRING, sdsnew(
+            "-BUSYKEY Target key name already exists.\r\n"))
+
+        # 常用字符
+        self.space: redisObject = createObject(REDIS_STRING, sdsnew(" "))
+        self.colon: redisObject = createObject(REDIS_STRING, sdsnew(":"))
+        self.plus: redisObject = createObject(REDIS_STRING, sdsnew("+"))
+        # 常用 SELECT 命令
+        self.select: List[redisObject] = []
+        for i in range(Conf.REDIS_SHARED_SELECT_CMDS):
+            dictid_str = bytearray(64)
+            dictid_len = ll2string(dictid_str, len(dictid_str), i)
+            self.select.append(createObject(REDIS_STRING, sdsnew(
+                b"*2\r\n$6\r\nSELECT\r\n$%d\r\n%s\r\n" % (dictid_len, dictid_str))))
+        # 常用命令
+        self.del_: redisObject = createStringObject("DEL", 3)
+        self.rpop: redisObject = createStringObject("RPOP", 4)
+        self.lpop: redisObject = createStringObject("LPOP", 4)
+        self.lpush: redisObject = createStringObject("LPUSH", 5)
+        # 常用整数
+        self.integers: List[redisObject] = [createObject(
+            REDIS_ENCODING_INT, sdsnew(int2cstr(i, 'int32'))) for i in range(Conf.REDIS_SHARED_INTEGERS)]
+        # 常用长度 bulk 或者 multi bulk 回复
+        self.mbulkhdr: List[redisObject] = [createObject(
+            REDIS_STRING, sdsnew("*%d\r\n" % i)) for i in range(Conf.REDIS_SHARED_INTEGERS)]
+        self.bulkhdr: List[redisObject] = [createObject(
+            REDIS_STRING, sdsnew("*%d\r\n" % i)) for i in range(Conf.REDIS_SHARED_INTEGERS)]
+        self.minstring: redisObject = createStringObject("minstring", 9)
+        self.maxstring: redisObject = createStringObject("maxstring", 9)
+
+shared = sharedObjects()
+
+def authCommand():
+    pass
+
+def lookupCommand(s) -> redisCommand:
+    pass
+
+def execCommand():
+    pass
+
+def discardCommand():
+    pass
+
+def multiCommand():
+    pass
+
+def watchCommand():
+    pass
+
+def queueMultiCommand(c: RedisClient):
+    pass
+
+def freeMemoryIfNeeded() -> int:
+    pass
+
+def call(c: RedisClient, flag: int):
+    pass
+
+def handleClientsBlockedOnLists():
+    # TODO(rlj): something to do.
+    pass
+
 def processCommand(c: RedisClient) -> int:
+    from .networking import addReply, addReplyError
+    server = get_server()
     if c.argv[0].ptr.lowereq('quit'):
-        pass
-    return 0   # TODO(rlj): something to do.
+        addReply(c, shared.ok)
+        c.flags |= REDIS_CLOSE_AFTER_REPLY
+        return REDIS_ERR
+
+    c.cmd = c.lastcmd = lookupCommand(c.argv[0].ptr)
+    if not c.cmd:
+        addReplyError(c, "unknown command '%s'" % c.argv[0].ptr)
+        return REDIS_OK
+    elif c.cmd.arity > 0 and (c.cmd.arity != c.argc or c.argc < -c.cmd.arity):
+        addReplyError(c, "wrong number of arguments for '%s' command" % c.cmd.name)
+        return REDIS_OK
+    if server.requirepass and (not c.authenticated) and c.cmd.proc != authCommand:
+        addReply(c, shared.noautherr)
+        return REDIS_OK
+    if server.maxmemory:
+        retval = freeMemoryIfNeeded()
+        if (c.cmd.flags & REDIS_CMD_DENYOOM) and retval == REDIS_ERR:
+            addReply(c, shared.oomerr)
+            return REDIS_OK
+    if server.loading and (not (c.cmd.flags & REDIS_CMD_LOADING)):
+        addReply(c, shared.loadingerr)
+        return REDIS_OK
+    if ((c.flags & REDIS_MULTI) and
+        c.cmd.proc not in [execCommand, discardCommand, multiCommand, watchCommand]):
+        # 在事务上下文中
+        queueMultiCommand(c)
+        addReply(c, shared.queued)
+    else:
+        call(c, REDIS_CALL_FULL)
+        # 处理那些解除了阻塞的键
+        if listLength(server.ready_keys):
+            handleClientsBlockedOnLists()
+    return REDIS_OK
 
 def selectDb(c: RedisClient, idx: int):
     pass
