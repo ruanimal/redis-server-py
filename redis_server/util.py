@@ -1,12 +1,12 @@
 import socket
 import typing
 from .csix import cstr, memcpy, NUL
-from typing import Dict, Any
+from typing import Dict, Any, Union, ByteString
 
 if typing.TYPE_CHECKING:
-    from .redis import RedisServer
+    from .redis import RedisServer, sharedObjects
 
-def ll2string(s: bytearray, length: int, value: int) -> int:
+def ll2string(s: ByteString, length: int, value: int) -> int:
     if length == 0:
         return 0
 
@@ -26,8 +26,8 @@ def ll2string(s: bytearray, length: int, value: int) -> int:
     l = 32 - p
     if l+1 > length:
         l = length - 1
-    s[:l] = buf[p:p+l]  # memcpy(s,p,l)
-    s[l] = NUL
+    s[:l] = buf[p:p+l]  # type: ignore
+    s[l] = NUL  # type: ignore
     return l
 
 
@@ -58,3 +58,7 @@ class SocketCache:
 def get_server() -> 'RedisServer':
     from .redis import RedisServer
     return RedisServer()
+
+def get_shared() -> 'sharedObjects':
+    from .redis import sharedObjects
+    return sharedObjects()

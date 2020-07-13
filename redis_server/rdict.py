@@ -6,6 +6,42 @@ from typing import Any, Union, Callable, Optional as Opt, List
 from .csix import *
 from fixedint import MutableUInt32, MutableInt64   # type: ignore # pylint: disable=no-name-in-module
 
+__all__ = [
+    'rDict',
+    'DICT_OK',
+    'DICT_ERR',
+    'dictCreate',
+    'dictExpand',
+    'dictAdd',
+    'dictAddRaw',
+    'dictReplace',
+    'dictReplaceRaw',
+    'dictDelete',
+    'dictDeleteNoFree',
+    'dictRelease',
+    'dictFind',
+    'dictFetchValue',
+    'dictResize',
+    'dictGetIterator',
+    'dictGetSafeIterator',
+    'dictNext',
+    'dictReleaseIterator',
+    'dictGetRandomKey',
+    'dictGetRandomKeys',
+    'dictGenHashFunction',
+    'dictGenCaseHashFunction',
+    'dictEmpty',
+    'dictEnableResize',
+    'dictDisableResize',
+    'dictRehash',
+    'dictRehashMilliseconds',
+    'dictSetHashFunctionSeed',
+    'dictGetHashFunctionSeed',
+    'dictScan',
+    'dictSize',
+    'dictGetVal',
+    'dictGetSignedIntegerVal',
+]
 
 DICT_OK = 0
 DICT_ERR = 1
@@ -640,6 +676,8 @@ def dictCompareKeys(d: rDict, key1, key2):
 def dictSize(d: rDict) -> int:
     return d.ht[0].used + d.ht[1].used
 
+def dictGetSignedIntegerVal(he: dictEntry) -> int:
+    return he.v.s64
 
 def donothing(*args, **kw) -> None:
     pass

@@ -1,5 +1,6 @@
 from typing import List, Callable, Optional as Opt, Tuple, BinaryIO, Dict
 from dataclasses import dataclass
+from .string import *
 
 # __all__ = [
 # ]
@@ -42,12 +43,6 @@ def multiCommand():
     pass
 
 def watchCommand():
-    pass
-
-def getCommand():
-    pass
-
-def setCommand():
     pass
 
 redisCommandTable = [

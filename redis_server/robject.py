@@ -1,5 +1,5 @@
-from typing import List, Callable, Optional as Opt, Tuple
-from .sds import sdslen, sdsnewlen
+from typing import List, Callable, Optional as Opt, Tuple, Union
+from .sds import sdslen, sdsnewlen, sds
 from .util import ll2string
 from .csix import ptr2long, strcoll, memcmp, cstr
 

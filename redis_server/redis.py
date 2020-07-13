@@ -26,7 +26,7 @@ from .adlist import (
     rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod,
     listLength,
 )
-from .rdict import rDict, dictCreate, dictSetHashFunctionSeed
+from .rdict import *
 from .sds import sds, sdsempty, sdsnew
 from .robject import redisObject, decrRefCountVoid, createStringObject, createObject, REDIS_STRING, REDIS_ENCODING_INT
 from .db import RedisDB, dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
@@ -422,6 +422,7 @@ class RedisServer(Singleton):
         self.bug_report_start: int = 0
         #  Software watchdog period in ms. 0 = off
         self.watchdog_period: int = 0
+        self.lua_caller = None   # NOTE: not support lua
 
     @property
     def saveparamslen(self):
@@ -606,7 +607,7 @@ class sharedObjects(Singleton):
         self.mbulkhdr: List[redisObject] = [createObject(
             REDIS_STRING, sdsnew("*%d\r\n" % i)) for i in range(Conf.REDIS_SHARED_INTEGERS)]
         self.bulkhdr: List[redisObject] = [createObject(
-            REDIS_STRING, sdsnew("*%d\r\n" % i)) for i in range(Conf.REDIS_SHARED_INTEGERS)]
+            REDIS_STRING, sdsnew("$%d\r\n" % i)) for i in range(Conf.REDIS_SHARED_INTEGERS)]
         self.minstring: redisObject = createStringObject("minstring", 9)
         self.maxstring: redisObject = createStringObject("maxstring", 9)
 
@@ -717,7 +718,26 @@ def freeClient(c: RedisClient):
     pass
 
 def populateCommandTable() -> None:
-    pass
+    flags_map = {
+        'w': REDIS_CMD_WRITE,
+        'r': REDIS_CMD_READONLY,
+        'm': REDIS_CMD_DENYOOM,
+        'a': REDIS_CMD_ADMIN,
+        'p': REDIS_CMD_PUBSUB,
+        's': REDIS_CMD_NOSCRIPT,
+        'R': REDIS_CMD_RANDOM,
+        'S': REDIS_CMD_SORT_FOR_SCRIPT,
+        'l': REDIS_CMD_LOADING,
+        't': REDIS_CMD_STALE,
+        'M': REDIS_CMD_SKIP_MONITOR,
+        'k': REDIS_CMD_ASKING,
+    }
+    for c in redisCommandTable:
+        for i in c.sflags:
+            c.flags |= flags_map[i]
+        server = get_server()
+        server.commands[c.name] = c
+        server.orig_commands[c.name] = c
 
 def getClientLimitClassByName(name: str) -> int:
     mapping = {

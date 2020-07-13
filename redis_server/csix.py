@@ -143,6 +143,10 @@ class timeval:
     def time(self):
         return self.tv_sec + (self.tv_usec // 1000000)
 
+    @property
+    def mstime(self):
+        return self.time // 1000
+
     @classmethod
     def from_datetime(cls, dt: datetime=None):
         """create timeval from datetime"""

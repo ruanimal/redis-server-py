@@ -9,7 +9,7 @@ from .robject import (
     decrRefCount, dupStringObject, sdsEncodedObject, getDecodedObject,
     REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR, REDIS_ENCODING_INT
 )
-from .util import SocketCache, get_server, ll2string
+from .util import SocketCache, get_server, ll2string, get_shared
 from .config import *
 from .sds import (
     sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds,
@@ -358,3 +358,35 @@ def addReply(c: 'RedisClient', obj: redisObject) -> None:
         decrRefCount(obj)
     else:
         raise ValueError("Wrong obj->encoding in addReply(): %r", obj)
+
+def addReplyLongLongWithPrefix(c: 'RedisClient', ll: int, prefix: str) -> None:
+    buf = bytearray(128)
+    shared = get_shared()
+    if prefix == '*' and ll < ServerConfig.REDIS_SHARED_BULKHDR_LEN:
+        addReply(c, shared.mbulkhdr[ll])
+        return
+    elif prefix == '$' and ll < ServerConfig.REDIS_SHARED_BULKHDR_LEN:
+        addReply(c, shared.bulkhdr[ll])
+        return
+    buf[0:1] = prefix.encode()
+    tmp = memoryview(buf)[1:]
+    length = ll2string(tmp, len(buf)-1, ll)
+    buf[length+1] = ord('\r')
+    buf[length+2] = ord('\n')
+    addReplyString(c, buf, length+3)
+
+def addReplyBulkLen(c: 'RedisClient', obj: redisObject) -> None:
+    if sdsEncodedObject(obj):
+        length = sdslen(obj.ptr)
+    else:
+        length = len(str(obj.ptr))
+    if length < ServerConfig.REDIS_SHARED_BULKHDR_LEN:
+        addReply(c, get_shared().bulkhdr[length])
+    else:
+        addReplyLongLongWithPrefix(c, length, '$')
+
+def addReplyBulk(c: 'RedisClient', obj: redisObject) -> None:
+    shared = get_shared()
+    addReplyBulkLen(c, obj)
+    addReply(c, obj)
+    addReply(c, shared.crlf)
