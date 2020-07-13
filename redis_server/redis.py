@@ -38,6 +38,7 @@ from .networking import (
 )
 from .multi import initClientMultiState
 from .util import Singleton, ll2string, get_server
+from .commands import *
 
 __version__ = '0.0.1'
 
@@ -81,30 +82,6 @@ class clientBufferLimitsConfig:
 class redisOpArray:
     # TODO(ruan.lj@foxmail.com): something to do.
     pass
-
-class redisCommand(object):
-    def __init__(self):
-        # 命令名字
-        self.name: str = ''
-        # 实现函数
-        self.proc: 'redisCommandProc' = None
-        # 参数个数
-        self.arity: int = 0
-        # 字符串表示的 FLAG
-        self.sflags: str = ''       # /* Flags as string representation, one char per flag. */
-        # 实际 FLAG
-        self.flags: int = 0      # /* The actual flags, obtained from the 'sflags' field. */
-        # 从命令中判断命令的键参数。在 Redis 集群转向时使用。
-        self.getkeys_proc: 'redisGetKeysProc' = None
-        # 指定哪些参数是 key
-        self.firstkey: int = 0   # /* The first argument that's a key (0 = no keys) */
-        self.lastkey: int = 0    # /* The last argument that's a key */
-        self.keystep: int = 0    # /* The step between first and last key */
-        # 统计信息
-        # microseconds 记录了命令执行耗费的总毫微秒数
-        # calls 是命令被执行的总次数
-        self.microseconds: int = 0
-        self.calls: int = 0
 
 @dataclass
 class saveparam:
@@ -393,6 +370,9 @@ class RedisServer(Singleton):
 
         #  Limits
         self.maxclients: int = 0
+        self.maxmemory: int = 0   # /* Max number of memory bytes to use */
+        self.maxmemory_policy: int = 0           # /* Policy for key eviction */
+        self.maxmemory_samples: int = 0          # /* Pricision of random sampling */
 
         #  Blocked clients
         #  Number of clients blocked by lists
@@ -632,29 +612,15 @@ class sharedObjects(Singleton):
 
 shared = sharedObjects()
 
-def authCommand():
+def queueMultiCommand(c: 'RedisClient'):
     pass
 
 def lookupCommand(s) -> redisCommand:
     pass
 
-def execCommand():
-    pass
-
-def discardCommand():
-    pass
-
-def multiCommand():
-    pass
-
-def watchCommand():
-    pass
-
-def queueMultiCommand(c: RedisClient):
-    pass
-
 def freeMemoryIfNeeded() -> int:
-    pass
+    # TODO(rlj): something to do.
+    return REDIS_OK
 
 def call(c: RedisClient, flag: int):
     pass
@@ -750,7 +716,7 @@ def createClient(server: RedisServer, fd: Opt[socket.socket]) -> Opt[RedisClient
 def freeClient(c: RedisClient):
     pass
 
-def populateCommandTable():
+def populateCommandTable() -> None:
     pass
 
 def getClientLimitClassByName(name: str) -> int:
