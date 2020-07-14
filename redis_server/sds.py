@@ -35,8 +35,13 @@ class Sdshdr(object):
     def lowereq(self, b: str) -> bool:
         return self.buf[:self.len].lower() == b.encode('utf8').lower()
 
+    @property
     def content(self) -> bytearray:
         return self.buf[:self.len]
+
+    @property
+    def text(self) -> str:
+        return self.buf[:self.len].decode('utf8')
 
     # def __missing__(self, key):
     #     return self.buf.__missing__(key)

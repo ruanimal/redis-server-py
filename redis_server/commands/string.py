@@ -10,6 +10,13 @@ from ..robject import *
 from ..networking import addReply, addReplyBulk
 from ..csix import timeval
 
+__all__ = [
+    'getGenericCommand',
+    'getCommand',
+    'setGenericCommand',
+    'setCommand',
+]
+
 REDIS_SET_NO_FLAGS = 0
 REDIS_SET_NX = (1<<0)   #  /* Set if key not exists. */
 REDIS_SET_XX = (1<<1)   #  /* Set if key exists. */

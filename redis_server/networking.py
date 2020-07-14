@@ -101,7 +101,7 @@ def processInputBuffer(c: 'RedisClient') -> None:
         if c.flags & REDIS_CLOSE_AFTER_REPLY:
             return
         if not c.reqtype:
-            if c.querybuf[0] == '*':
+            if c.querybuf[0:1] == b'*':
                 c.reqtype = REDIS_REQ_MULTIBULK
             else:
                 c.reqtype = REDIS_REQ_INLINE
@@ -137,8 +137,11 @@ def readQueryFromClient(el: aeEventLoop, fd: int, privdata: 'RedisClient', mask:
         c.querybuf_peak = qlen
     c.querybuf = sdsMakeRoomFor(c.querybuf, readlen)
     sock = SocketCache.get(fd)
-    nread = sock.recv_into(memoryview(c.querybuf.buf)[qlen:], readlen)
+    import ipdb; ipdb.set_trace()
+    chunk = sock.recv(readlen)
+    nread = len(chunk)
     if nread:
+        c.querybuf[qlen:qlen+nread] = chunk
         sdsIncrLen(c.querybuf, nread)
         c.lastinteraction = server.unixtime
     else:

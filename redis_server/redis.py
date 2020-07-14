@@ -437,7 +437,7 @@ class RedisServer(Singleton):
         return len(self.ipfd)
 
 
-class RedisClient(object):
+class RedisClient(object):   # pylint: disable=all
     def __init__(self):
         # // 套接字描述符
         self.fd: Opt[socket.socket] = None
@@ -448,7 +448,7 @@ class RedisClient(object):
         # // 客户端的名字
         self.name: redisObject = None
         # // 查询缓冲区
-        self.querybuf: sds = None
+        self.querybuf: sds = sdsempty()
         # // 查询缓冲区长度峰值
         self.querybuf_peak: int = 0   # /* Recent (100ms or more) peak of querybuf size */
         # // 参数数量
@@ -611,13 +611,12 @@ class sharedObjects(Singleton):
         self.minstring: redisObject = createStringObject("minstring", 9)
         self.maxstring: redisObject = createStringObject("maxstring", 9)
 
-shared = sharedObjects()
-
 def queueMultiCommand(c: 'RedisClient'):
     pass
 
-def lookupCommand(s) -> redisCommand:
-    pass
+def lookupCommand(s: sds) -> Opt[redisCommand]:
+    server = get_server()
+    return server.commands.get(sds.text)
 
 def freeMemoryIfNeeded() -> int:
     # TODO(rlj): something to do.
@@ -633,6 +632,7 @@ def handleClientsBlockedOnLists():
 def processCommand(c: RedisClient) -> int:
     from .networking import addReply, addReplyError
     server = get_server()
+    shared = sharedObjects()
     if c.argv[0].ptr.lowereq('quit'):
         addReply(c, shared.ok)
         c.flags |= REDIS_CLOSE_AFTER_REPLY

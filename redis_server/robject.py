@@ -59,7 +59,9 @@ def createEmbeddedStringObject(ptr: cstr, length: int) -> robj:
     return o
 
 REDIS_ENCODING_EMBSTR_SIZE_LIMIT = 39
-def createStringObject(ptr: cstr, length: int) -> robj:
+def createStringObject(ptr: Union[cstr, str], length: int) -> robj:
+    if isinstance(ptr, str):
+        ptr = ptr.encode('utf8')
     if (length <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT):
         return createEmbeddedStringObject(ptr, length)
     else:
