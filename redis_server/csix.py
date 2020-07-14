@@ -11,6 +11,8 @@ __all__ = [
     'NUL',
     'UINT_MASK',
     'ULONG_MASK',
+    'LONG_MIN',
+    'LONG_MAX',
     'INT64_MAX',
     'INT64_MIN',
     'INT32_MAX',
@@ -55,6 +57,8 @@ INT16_MAX = 2 ** 15 - 1
 INT16_MIN = -INT16_MAX - 1
 INT8_MAX = 2 ** 7 - 1
 INT8_MIN = -INT8_MAX - 1
+LONG_MIN = INT64_MIN
+LONG_MAX = INT64_MAX
 
 UINT16_MAX = 2 ** 16 - 1
 UCHAR_MAX = 255

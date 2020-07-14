@@ -1,7 +1,12 @@
-from typing import List, Callable, Optional as Opt, Tuple, Union
-from .sds import sdslen, sdsnewlen, sds
-from .util import ll2string
+import typing
+from typing import List, Callable, Optional as Opt, Tuple, Union, ByteString
+from .sds import sdslen, sdsnewlen, sds, sdsfree, sdsavail, sdsRemoveFreeSpace
+from .util import ll2string, string2l, get_shared, get_server
 from .csix import ptr2long, strcoll, memcmp, cstr
+from .config import *
+
+if typing.TYPE_CHECKING:
+    from .redis import RedisClient
 
 REDIS_LRU_BITS = 24
 
@@ -156,3 +161,65 @@ def getDecodedObject(o: robj) -> robj:
         return dec
     else:
         raise ValueError("Unknown encoding type")
+
+def tryObjectEncoding(o: robj) -> robj:
+    assert o.type == REDIS_STRING
+    s = o.ptr
+    if not sdsEncodedObject(o):
+        return o
+    if o.refcount > 1:
+        return o
+    shared = get_shared()
+    server = get_server()
+    length = sdslen(s)
+    flag, value = string2l(s, length)
+    # 只对长度小于或等于 21 字节，并且可以被解释为整数的字符串进行编码, 编码为整数
+    if length < 21 and flag:
+        if server.maxmemory == 0 and value >= 0 and value < ServerConfig.REDIS_SHARED_INTEGERS:
+            decrRefCount(o)
+            incrRefCount(shared.integers[value])
+            return shared.integers[value]
+        else:
+            if o.encoding == REDIS_ENCODING_RAW:
+                sdsfree(o.ptr)
+            o.encoding = REDIS_ENCODING_INT
+            o.ptr = value
+            return o
+    # 尝试将 RAW 编码的字符串编码为 EMBSTR 编码
+    if length <= REDIS_ENCODING_EMBSTR_SIZE_LIMIT:
+        if o.encoding == REDIS_ENCODING_EMBSTR:
+            return o
+        emb = createEmbeddedStringObject(s, sdslen(s))
+        decrRefCount(o)
+        return emb
+    if o.encoding == REDIS_ENCODING_RAW and sdsavail(s) > length // 10:
+        o.ptr = sdsRemoveFreeSpace(o.ptr)
+    return o
+
+def getLongLongFromObject(o: robj) -> Tuple[int, int]:
+    value = 0
+    if o == None:
+        value = 0
+    else:
+        assert o.type == REDIS_STRING
+        if sdsEncodedObject(o):
+            try:
+                value = int(o.ptr.content, 10)
+            except ValueError:
+                return REDIS_ERR, value
+        elif o.encoding == REDIS_ENCODING_INT:
+            value = o.ptr
+        else:
+            raise RuntimeError("Unknown string encoding")
+    return REDIS_OK, value
+
+def getLongLongFromObjectOrReply(c: 'RedisClient', o: robj, msg: Opt[str]) -> Tuple[int, int]:
+    from .networking import addReplyError
+    status, value = getLongLongFromObject(o)
+    if status != REDIS_OK:
+        if msg:
+            addReplyError(c, msg)
+        else:
+            addReplyError(c, "value is not an integer or out of range")
+        return REDIS_ERR, 0
+    return REDIS_OK, value

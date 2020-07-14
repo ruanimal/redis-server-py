@@ -35,6 +35,9 @@ class Sdshdr(object):
     def lowereq(self, b: str) -> bool:
         return self.buf[:self.len].lower() == b.encode('utf8').lower()
 
+    def content(self) -> bytearray:
+        return self.buf[:self.len]
+
     # def __missing__(self, key):
     #     return self.buf.__missing__(key)
 
@@ -221,3 +224,6 @@ def sdssplitargs(line: sds) -> List[sds]:
         s.buf.append(NUL)
         res.append(s)
     return res
+
+def sdsdup(s: sds) -> sds:
+    return sdsnewlen(s.buf, sdslen(s))

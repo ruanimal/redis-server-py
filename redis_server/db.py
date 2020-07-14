@@ -1,7 +1,7 @@
 import typing
 from typing import List, Callable, Optional as Opt, Tuple
 from .rdict import rDict, dictGenHashFunction, dictType
-from .sds import sds, sdslen
+from .sds import sds, sdslen, sdsdup
 from .csix import memcmp, timeval
 from .robject import redisObject, dictRedisObjectDestructor
 from .config import *
@@ -117,6 +117,10 @@ def notifyKeyspaceEvent(type: int, event: str, key: redisObject, dbid: int) -> N
     # NOTE: 暂不实现
     pass
 
+def signalModifiedKey(db: RedisDB, key: redisObject):
+    # NOTE: 暂不实现
+    pass
+
 def dbDelete(db: RedisDB, key: redisObject) -> int:
     if dictSize(db.expires) > 0:
         dictDelete(db.expires, key.ptr)
@@ -152,6 +156,10 @@ def lookupKey(db: RedisDB, key: redisObject) -> Opt[redisObject]:
     else:
         return None
 
+def lookupKeyWrite(db: RedisDB, key: redisObject):
+    expireIfNeeded(db, key)
+    return lookupKey(db, key)
+
 def lookupKeyRead(db: RedisDB, key: redisObject) -> Opt[redisObject]:
     expireIfNeeded(db, key)
     val = lookupKey(db, key)
@@ -168,3 +176,34 @@ def lookupKeyReadOrReply(c: 'RedisClient', key: redisObject, reply: redisObject)
     if not o:
         addReply(c, reply)
     return o
+
+def dbAdd(db: RedisDB, key: redisObject, val: redisObject):
+    copy = sdsdup(key.ptr)
+    retval = dictAdd(db.dict, copy, val)
+    assert retval == REDIS_OK
+
+def dbOverwrite(db: RedisDB, key: redisObject, val: redisObject):
+    de = dictFind(db.dict, key.ptr)
+    assert de != None
+    dictReplace(db.dict, key.ptr, val)
+
+def removeExpire(db: RedisDB, key: redisObject) -> int:
+    assert dictFind(db.dict, key.ptr) != None
+    return dictDelete(db.expires, key.ptr) == DICT_OK
+
+def setExpire(db: RedisDB, key: redisObject, when: int):
+    kde = dictFind(db.dict, key.ptr)
+    assert kde
+    de = dictReplaceRaw(db.expires, dictGetKey(kde))
+    assert de
+    dictSetSignedIntegerVal(de, when)
+
+def setKey(db: RedisDB, key: redisObject, val: redisObject):
+    from .robject import incrRefCount
+    if lookupKeyWrite(db, key) == None:
+        dbAdd(db, key, val)
+    else:
+        dbOverwrite(db, key, val)
+    incrRefCount(val)
+    removeExpire(db, key)
+    signalModifiedKey(db, key)

@@ -1,7 +1,7 @@
 import socket
 import typing
-from .csix import cstr, memcpy, NUL
-from typing import Dict, Any, Union, ByteString
+from .csix import cstr, memcpy, NUL, LONG_MIN, LONG_MAX
+from typing import Dict, Any, Union, ByteString, Tuple
 
 if typing.TYPE_CHECKING:
     from .redis import RedisServer, sharedObjects
@@ -29,6 +29,24 @@ def ll2string(s: ByteString, length: int, value: int) -> int:
     s[:l] = buf[p:p+l]  # type: ignore
     s[l] = NUL  # type: ignore
     return l
+
+def string2l(s: cstr, slen: int) -> Tuple[int, int]:
+    """convert bytes to int
+    return:
+        flag: 1 -> succ, 0 -> fail
+        val: int value
+    """
+    val = 0
+    try:
+        val = int(s[:slen].strip(b'\0'))
+    except ValueError:
+        return 0, 0
+    if val < LONG_MIN:
+        return 0, 0
+    elif val > LONG_MAX:
+        return 0, 0
+    else:
+        return 1, val
 
 
 class _SingletonMeta(type):

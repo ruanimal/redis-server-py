@@ -201,6 +201,10 @@ REDIS_CALL_STATS = 2
 REDIS_CALL_PROPAGATE = 4
 REDIS_CALL_FULL = (REDIS_CALL_SLOWLOG | REDIS_CALL_STATS | REDIS_CALL_PROPAGATE)
 
+# /* Units */
+UNIT_SECONDS = 0
+UNIT_MILLISECONDS = 1
+
 # /* 默认的服务器配置值 */
 class ServerConfig:
     REDIS_DEFAULT_HZ =        10     # /* Time interrupt calls/sec. */

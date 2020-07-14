@@ -8,8 +8,10 @@ from fixedint import MutableUInt32, MutableInt64   # type: ignore # pylint: disa
 
 __all__ = [
     'rDict',
+    'dictType',
     'DICT_OK',
     'DICT_ERR',
+    'DICT_HT_INITIAL_SIZE',
     'dictCreate',
     'dictExpand',
     'dictAdd',
@@ -29,6 +31,7 @@ __all__ = [
     'dictGetRandomKey',
     'dictGetRandomKeys',
     'dictGenHashFunction',
+    'dictIntHashFunction',
     'dictGenCaseHashFunction',
     'dictEmpty',
     'dictEnableResize',
@@ -40,7 +43,10 @@ __all__ = [
     'dictScan',
     'dictSize',
     'dictGetVal',
+    'dictGetKey',
     'dictGetSignedIntegerVal',
+    'dictSetSignedIntegerVal',
+    '_dictNextPower',
 ]
 
 DICT_OK = 0
@@ -665,6 +671,8 @@ def dictSetVal(d: rDict, entry: dictEntry, val) -> None:
 def dictGetVal(he: dictEntry):
     return he.v.val
 
+def dictGetKey(he: dictEntry):
+    return he.key
 
 def dictCompareKeys(d: rDict, key1, key2):
     if d.type and d.type.keyCompare:
@@ -678,6 +686,9 @@ def dictSize(d: rDict) -> int:
 
 def dictGetSignedIntegerVal(he: dictEntry) -> int:
     return he.v.s64
+
+def dictSetSignedIntegerVal(he: dictEntry, val: int):
+    he.v.s64 = val
 
 def donothing(*args, **kw) -> None:
     pass
