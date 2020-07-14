@@ -9,10 +9,10 @@ from .robject import (
     decrRefCount, dupStringObject, sdsEncodedObject, getDecodedObject,
     REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR, REDIS_ENCODING_INT
 )
-from .util import SocketCache, get_server, ll2string, get_shared
+from .util import SocketCache, get_server, ll2string, get_shared, string2ll
 from .config import *
 from .sds import (
-    sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds,
+    sdsempty, sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds,
     sdscatlen, sdsfree
 )
 from .csix import cstr, ULONG_MASK
@@ -63,178 +63,9 @@ def resetClient(c: 'RedisClient') -> None:
     if (not (c.flags & REDIS_MULTI) and prevcmd != askingCommand):
         c.flags &= (~REDIS_ASKING)
 
-def processInlineBuffer(c: 'RedisClient') -> int:
-    server = get_server()
-    idx = c.querybuf.buf.find(b'\n')
-    if idx == -1 or idx == 0:   # buffer 不包含换行
-        if sdslen(c.querybuf) > REDIS_INLINE_MAX_SIZE:
-            addReplyError(c, "Protocol error: too big inline request")
-            setProtocolError(c, 0)
-        return REDIS_ERR
-    newline = memoryview(c.querybuf.buf)[:idx]
-    if newline[-1] == b'\r':
-        newline = newline[:-1]
-    querylen = len(newline)
-    aux = sdsnewlen(c.querybuf.buf, querylen)
-    argv = sdssplitargs(aux)
-    if not argv:
-        addReplyError(c, "Protocol error: unbalanced quotes in request")
-        setProtocolError(c, 0)
-        return REDIS_ERR
-    if querylen == 0 and c.flags & REDIS_SLAVE:
-        c.repl_ack_time = server.unixtime
-    sdsrange(c.querybuf, querylen+2, -1)
-    c.argv = [createObject(REDIS_STRING, i) for i in argv]
-    return REDIS_OK
-
-def processMultibulkBuffer(c: 'RedisClient'):
-    pass
-
-
-def processInputBuffer(c: 'RedisClient') -> None:
-    from .redis import processCommand
-    while sdslen(c.querybuf) > 0:
-        if (not (c.flags & REDIS_SLAVE) and clientsArePaused()):
-            return
-        if c.flags & REDIS_BLOCKED:
-            return
-        if c.flags & REDIS_CLOSE_AFTER_REPLY:
-            return
-        if not c.reqtype:
-            if c.querybuf[0:1] == b'*':
-                c.reqtype = REDIS_REQ_MULTIBULK
-            else:
-                c.reqtype = REDIS_REQ_INLINE
-        if c.reqtype == REDIS_REQ_INLINE:
-            if (processInlineBuffer(c) != REDIS_OK):
-                break
-        elif c.reqtype == REDIS_REQ_MULTIBULK:
-            if (processMultibulkBuffer(c) != REDIS_OK):
-                break
-        else:
-            raise ValueError("Unknown request type: %r", c.reqtype)
-        if c.argc == 0:
-            resetClient(c)
-        else:
-            if processCommand(c) == REDIS_OK:
-                resetClient(c)
-
-
-def readQueryFromClient(el: aeEventLoop, fd: int, privdata: 'RedisClient', mask: int) -> None:
-    from .redis import freeClient
-    server = get_server()
-    c = server.current_client = privdata
-
-    readlen = REDIS_IOBUF_LEN
-    if (c.reqtype == REDIS_REQ_MULTIBULK and c.multibulklen != -1
-        and c.bulklen >= REDIS_MBULK_BIG_ARG):
-        remaining = c.bulklen+2 - sdslen(c.querybuf)
-        if remaining < readlen:
-            readlen = remaining
-
-    qlen = sdslen(c.querybuf)
-    if c.querybuf_peak < qlen:
-        c.querybuf_peak = qlen
-    c.querybuf = sdsMakeRoomFor(c.querybuf, readlen)
-    sock = SocketCache.get(fd)
-    import ipdb; ipdb.set_trace()
-    chunk = sock.recv(readlen)
-    nread = len(chunk)
-    if nread:
-        c.querybuf[qlen:qlen+nread] = chunk
-        sdsIncrLen(c.querybuf, nread)
-        c.lastinteraction = server.unixtime
-    else:
-        server.current_client = None
-        return
-    if sdslen(c.querybuf) > server.client_max_querybuf_len:
-        logger.warning('Closing client that reached max query buffer length: %s', c)
-        freeClient(c)
-    processInputBuffer(c)
-    server.current_client = None
-
-def dupClientReplyValue(o: redisObject) -> redisObject:
-    incrRefCount(o)
-    return o
-
-def listMatchObjects(a: redisObject, b: redisObject):
-    return equalStringObjects(a, b)
-
-def acceptCommonHandler(fd: socket.socket, flags: int) -> None:
-    from .redis import createClient, freeClient, RedisServer
-
-    server = RedisServer()
-    c = createClient(server, fd)
-    if not c:
-        fd.close()
-        return
-
-    if len(server.clients) > server.maxclients:
-        err = b"-ERR max number of clients reached\r\n"
-        fd.sendall(err)
-        server.stat_rejected_conn += 1
-        freeClient(c)
-        return
-    server.stat_numcommands += 1
-    c.flags |= flags
-    # fd.sendall(b'Hello world!\r\n')   # NOTE: test
-
-def acceptTcpHandler(el: aeEventLoop, fd: int, privdata, mask: int):
-    max_ = MAX_ACCEPTS_PER_CALL
-
-    while max_:
-        max_ -= 1
-        sfd = SocketCache.get(fd)
-        try:
-            cfd, addr = anetTcpAccept(sfd)
-        except OSError as e:
-            if e.errno == errno.EWOULDBLOCK:
-                logger.warning("Accepting client connection: %s", e)
-            return
-        logger.info('Accepted %s:%s', *addr)
-        acceptCommonHandler(cfd, 0)
-
-def acceptUnixHandler(*args):
-    pass
-
 def sendReplyToClient():
     # TODO(rlj): something to do.
     pass
-
-def prepareClientToWrite(c: 'RedisClient') -> int:
-    server = get_server()
-    if c.flags & REDIS_LUA_CLIENT:
-        return REDIS_OK
-    if (c.flags & REDIS_MASTER) and not(c.flags & REDIS_MASTER_FORCE_REPLY):
-        return REDIS_ERR
-    if not c.fd or c.fd.fileno() <= 0:
-        return REDIS_ERR
-    if (c.bufpos == 0 and listLength(c.reply) == 0
-        and (c.replstate in (REDIS_REPL_NONE, REDIS_REPL_ONLINE))
-        and aeCreateFileEvent(server.el, c.fd.fileno(), AE_WRITABLE, sendReplyToClient, c) == AE_ERR
-        ):
-        return REDIS_ERR
-    return REDIS_OK
-
-
-def _addReplyToBuffer(c: 'RedisClient', s: cstr, length: int) -> int:
-    available = len(c.buf) - c.bufpos
-    if c.flags & REDIS_CLOSE_AFTER_REPLY:
-        return REDIS_OK
-    if listLength(c.reply) > 0:
-        return REDIS_ERR
-    if length > available:
-        return REDIS_ERR
-    c.buf[c.bufpos:c.bufpos+length] = s[:length]
-    c.bufpos += length
-    return REDIS_OK
-
-
-def getStringObjectSdsUsedMemory(o: redisObject) -> int:
-    # NOTE: redis 应该是为了统计使用内存的大小, Python简单处理
-    assert o.type == REDIS_STRING and isinstance(o.ptr, sds)
-    return len(o.ptr.buf)
-
 
 def freeClientAsync(c: 'RedisClient') -> None:
     if c.flags & REDIS_CLOSE_ASAP:
@@ -255,6 +86,21 @@ def asyncCloseClientOnOutputBufferLimitReached(c: 'RedisClient') -> None:
         freeClientAsync(c)
         logger.warning("Client %s scheduled to be closed ASAP for overcoming of output buffer limits.", c)
 
+def prepareClientToWrite(c: 'RedisClient') -> int:
+    server = get_server()
+    if c.flags & REDIS_LUA_CLIENT:
+        return REDIS_OK
+    if (c.flags & REDIS_MASTER) and not(c.flags & REDIS_MASTER_FORCE_REPLY):
+        return REDIS_ERR
+    if not c.fd or c.fd.fileno() <= 0:
+        return REDIS_ERR
+    if (c.bufpos == 0 and listLength(c.reply) == 0
+        and (c.replstate in (REDIS_REPL_NONE, REDIS_REPL_ONLINE))
+        and aeCreateFileEvent(server.el, c.fd.fileno(), AE_WRITABLE, sendReplyToClient, c) == AE_ERR
+        ):
+        return REDIS_ERR
+    return REDIS_OK
+
 
 def dupLastObjectIfNeeded(reply: rList):
     assert listLength(reply) > 0
@@ -265,6 +111,11 @@ def dupLastObjectIfNeeded(reply: rList):
         decrRefCount(cur)
         ln.value = new   # type: ignore
     return listNodeValue(ln)   # type: ignore
+
+def getStringObjectSdsUsedMemory(o: redisObject) -> int:
+    # NOTE: redis 应该是为了统计使用内存的大小, Python简单处理
+    assert o.type == REDIS_STRING and isinstance(o.ptr, sds)
+    return len(o.ptr.buf)
 
 def _addReplySdsToList(c: 'RedisClient', s: sds) -> None:
     if c.flags & REDIS_CLOSE_AFTER_REPLY:
@@ -326,6 +177,18 @@ def _addReplyObjectToList(c: 'RedisClient', o: redisObject) -> None:
             listAddNodeTail(c.reply, o)
             c.reply_bytes += getStringObjectSdsUsedMemory(o)
     asyncCloseClientOnOutputBufferLimitReached(c)
+
+def _addReplyToBuffer(c: 'RedisClient', s: cstr, length: int) -> int:
+    available = len(c.buf) - c.bufpos
+    if c.flags & REDIS_CLOSE_AFTER_REPLY:
+        return REDIS_OK
+    if listLength(c.reply) > 0:
+        return REDIS_ERR
+    if length > available:
+        return REDIS_ERR
+    c.buf[c.bufpos:c.bufpos+length] = s[:length]
+    c.bufpos += length
+    return REDIS_OK
 
 def addReplyString(c: 'RedisClient', s: cstr, length: int) -> None:
     if prepareClientToWrite(c) != REDIS_OK:
@@ -393,3 +256,201 @@ def addReplyBulk(c: 'RedisClient', obj: redisObject) -> None:
     addReplyBulkLen(c, obj)
     addReply(c, obj)
     addReply(c, shared.crlf)
+
+def processInlineBuffer(c: 'RedisClient') -> int:
+    server = get_server()
+    idx = c.querybuf.buf.find(b'\n')
+    if idx == -1 or idx == 0:   # buffer 不包含换行
+        if sdslen(c.querybuf) > REDIS_INLINE_MAX_SIZE:
+            addReplyError(c, "Protocol error: too big inline request")
+            setProtocolError(c, 0)
+        return REDIS_ERR
+    newline = memoryview(c.querybuf.buf)[:idx]
+    if newline[-1] == b'\r':
+        newline = newline[:-1]
+    querylen = len(newline)
+    aux = sdsnewlen(c.querybuf.buf, querylen)
+    argv = sdssplitargs(aux)
+    if not argv:
+        addReplyError(c, "Protocol error: unbalanced quotes in request")
+        setProtocolError(c, 0)
+        return REDIS_ERR
+    if querylen == 0 and c.flags & REDIS_SLAVE:
+        c.repl_ack_time = server.unixtime
+    sdsrange(c.querybuf, querylen+2, -1)
+    c.argv = [createObject(REDIS_STRING, i) for i in argv]
+    return REDIS_OK
+
+def processMultibulkBuffer(c: 'RedisClient'):
+    ll = 0
+    pos = 0
+    if c.multibulklen == 0:
+        assert c.argc == 0
+        assert c.querybuf[0:1] == b'*'
+        newline = c.querybuf[0:c.querybuf.buf.find(b'\r\n')+1]
+        if not newline:
+            if sdslen(c.querybuf) > REDIS_INLINE_MAX_SIZE:
+                addReplyError(c, "Protocol error: too big mbulk count string")
+                setProtocolError(c, 0)
+            return REDIS_ERR
+        ok, ll = string2ll(newline[1:], len(newline)-1)
+        if not ok or ll > 1024 * 1024:
+            addReplyError(c, "Protocol error: invalid multibulk length")
+            setProtocolError(c, 0)
+        pos = len(newline) + 2
+        if ll <= 0:
+            sdsrange(c.querybuf, pos, -1)
+            return REDIS_OK
+        c.multibulklen = ll
+    assert c.multibulklen > 0
+    while c.multibulklen:
+        if c.bulklen == -1:
+            newpos = c.querybuf.buf.find(b'\r\n', pos)
+            if newpos < 0:
+                if sdslen(c.querybuf) > REDIS_INLINE_MAX_SIZE:
+                    addReplyError(c, "Protocol error: too big bulk count string")
+                    setProtocolError(c, 0)
+                    return REDIS_ERR
+                break
+            if c.querybuf[pos:pos+1] != b'$':
+                addReplyError(c, "Protocol error: expected '$', got %r" % c.querybuf[pos:pos+1])
+                setProtocolError(c, pos)
+                return REDIS_ERR
+            ok, ll = string2ll(c.querybuf[pos+1:newpos], newpos-(pos+1))
+            if not ok or ll < 0 or ll > 512*1024*1024:
+                addReplyError(c, "Protocol error: invalid bulk length")
+                setProtocolError(c, pos)
+                return REDIS_ERR
+            pos = newpos + 2
+            if ll >= REDIS_MBULK_BIG_ARG:
+                sdsrange(c.querybuf, pos, -1)
+                pos = 0
+                qblen = sdslen(c.querybuf)
+                if qblen < ll + 2:
+                    c.querybuf = sdsMakeRoomFor(c.querybuf, ll+2-qblen)
+            c.bulklen = ll
+        if sdslen(c.querybuf)-pos < c.bulklen + 2:
+            break
+        else:
+            if pos == 0 and c.bulklen >= REDIS_MBULK_BIG_ARG and sdslen(c.querybuf) == c.bulklen+2:
+                c.argv.append(createObject(REDIS_STRING, c.querybuf))
+                sdsIncrLen(c.querybuf, -2)
+                c.querybuf = sdsempty()
+                c.querybuf = sdsMakeRoomFor(c.querybuf, c.bulklen+2)
+                pos = 0
+            else:
+                c.argv.append(createStringObject(c.querybuf[pos:pos+c.bulklen], c.bulklen))
+                pos += c.bulklen+2
+            c.bulklen = -1
+            c.multibulklen -= 1
+
+    if pos:
+        sdsrange(c.querybuf, pos, -1)
+    if c.multibulklen == 0:
+        return REDIS_OK
+    return REDIS_ERR
+
+def processInputBuffer(c: 'RedisClient') -> None:
+    from .redis import processCommand
+    while sdslen(c.querybuf) > 0:
+        if (not (c.flags & REDIS_SLAVE) and clientsArePaused()):
+            return
+        if c.flags & REDIS_BLOCKED:
+            return
+        if c.flags & REDIS_CLOSE_AFTER_REPLY:
+            return
+        if not c.reqtype:
+            if c.querybuf[0:1] == b'*':
+                c.reqtype = REDIS_REQ_MULTIBULK
+            else:
+                c.reqtype = REDIS_REQ_INLINE
+        if c.reqtype == REDIS_REQ_INLINE:
+            if (processInlineBuffer(c) != REDIS_OK):
+                break
+        elif c.reqtype == REDIS_REQ_MULTIBULK:
+            if (processMultibulkBuffer(c) != REDIS_OK):
+                break
+        else:
+            raise ValueError("Unknown request type: %r", c.reqtype)
+        if c.argc == 0:
+            resetClient(c)
+        else:
+            if processCommand(c) == REDIS_OK:
+                resetClient(c)
+
+
+def readQueryFromClient(el: aeEventLoop, fd: int, privdata: 'RedisClient', mask: int) -> None:
+    from .redis import freeClient
+    server = get_server()
+    c = server.current_client = privdata
+
+    readlen = REDIS_IOBUF_LEN
+    if (c.reqtype == REDIS_REQ_MULTIBULK and c.multibulklen != -1
+        and c.bulklen >= REDIS_MBULK_BIG_ARG):
+        remaining = c.bulklen+2 - sdslen(c.querybuf)
+        if remaining < readlen:
+            readlen = remaining
+
+    qlen = sdslen(c.querybuf)
+    if c.querybuf_peak < qlen:
+        c.querybuf_peak = qlen
+    c.querybuf = sdsMakeRoomFor(c.querybuf, readlen)
+    sock = SocketCache.get(fd)
+    chunk = sock.recv(readlen)
+    nread = len(chunk)
+    if nread:
+        c.querybuf[qlen:qlen+nread] = chunk
+        sdsIncrLen(c.querybuf, nread)
+        c.lastinteraction = server.unixtime
+    else:
+        server.current_client = None
+        return
+    if sdslen(c.querybuf) > server.client_max_querybuf_len:
+        logger.warning('Closing client that reached max query buffer length: %s', c)
+        freeClient(c)
+    processInputBuffer(c)
+    server.current_client = None
+
+def dupClientReplyValue(o: redisObject) -> redisObject:
+    incrRefCount(o)
+    return o
+
+def listMatchObjects(a: redisObject, b: redisObject):
+    return equalStringObjects(a, b)
+
+def acceptCommonHandler(fd: socket.socket, flags: int) -> None:
+    from .redis import createClient, freeClient, RedisServer
+
+    server = RedisServer()
+    c = createClient(server, fd)
+    if not c:
+        fd.close()
+        return
+
+    if len(server.clients) > server.maxclients:
+        err = b"-ERR max number of clients reached\r\n"
+        fd.sendall(err)
+        server.stat_rejected_conn += 1
+        freeClient(c)
+        return
+    server.stat_numcommands += 1
+    c.flags |= flags
+    # fd.sendall(b'Hello world!\r\n')   # NOTE: test
+
+def acceptTcpHandler(el: aeEventLoop, fd: int, privdata, mask: int):
+    max_ = MAX_ACCEPTS_PER_CALL
+
+    while max_:
+        max_ -= 1
+        sfd = SocketCache.get(fd)
+        try:
+            cfd, addr = anetTcpAccept(sfd)
+        except OSError as e:
+            if e.errno == errno.EWOULDBLOCK:
+                logger.warning("Accepting client connection: %s", e)
+            return
+        logger.info('Accepted %s:%s', *addr)
+        acceptCommonHandler(cfd, 0)
+
+def acceptUnixHandler(*args):
+    pass

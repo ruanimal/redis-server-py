@@ -48,6 +48,8 @@ def string2l(s: cstr, slen: int) -> Tuple[int, int]:
     else:
         return 1, val
 
+string2ll = string2l
+
 
 class _SingletonMeta(type):
     _instances: Dict[Any, Any]  = {}
