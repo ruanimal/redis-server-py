@@ -3,6 +3,8 @@ import errno
 import typing
 from logging import getLogger
 
+import ipdb
+
 from .ae import aeDeleteFileEvent, aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
 from .anet import anetTcpAccept
 from .robject import (
@@ -381,7 +383,7 @@ def readQueryFromClient(el: aeEventLoop, fd: int, privdata: 'RedisClient', mask:
     from .redis import freeClient
     server = get_server()
     c = server.current_client = privdata
-
+    import ipdb; ipdb.set_trace()
     readlen = REDIS_IOBUF_LEN
     if (c.reqtype == REDIS_REQ_MULTIBULK and c.multibulklen != -1
         and c.bulklen >= REDIS_MBULK_BIG_ARG):
@@ -417,10 +419,10 @@ def sendReplyToClient(ae: aeEventLoop, fd: int, privdata: 'RedisClient', mask: i
     sock = SocketCache.get(fd)
     server = get_server()
     err = None
-    while c.bulklen > 0 or listLength(c.reply):
+    while c.bufpos > 0 or listLength(c.reply):
         if c.bufpos > 0:
             try:
-                sock.sendall(c.buf)
+                sock.sendall(memoryview(c.buf)[:c.bufpos])
             except OSError as e:
                 err = e
                 break

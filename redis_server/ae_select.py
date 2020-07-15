@@ -72,9 +72,9 @@ def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
         fe = eventLoop.events[fd]
         if fe.mask == AE_NONE:
             continue
-        if (fe.mask & AE_READABLE):
+        if (fe.mask & AE_READABLE) and fd in _rfds:
             mask |= AE_READABLE
-        if (fe.mask & AE_WRITABLE):
+        if (fe.mask & AE_WRITABLE) and fd in _wfds:
             mask |= AE_WRITABLE
         eventLoop.fired[numevents].fd = fd
         eventLoop.fired[numevents].mask = mask

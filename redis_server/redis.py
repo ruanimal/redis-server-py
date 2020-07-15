@@ -381,7 +381,7 @@ class RedisServer(Singleton):
         #  list of clients to unblock before next loop
         self.unblocked_clients: list = []
         #  List of readyList structures for BLPOP & co
-        self.ready_keys: rList = None
+        self.ready_keys: rList = listCreate()
         #  Sort parameters - qsort_r() is only available under BSD so we* have to take this state global, in order to pass it to sortCompare()
         self.sort_desc: int = 0
         self.sort_alpha: int = 0
@@ -470,7 +470,7 @@ class RedisClient(object):   # pylint: disable=all
         # // 回复链表中对象的总大小
         self.reply_bytes: int = 0
         # // 已发送字节，处理 short write 用
-        self.sentlen: int
+        self.sentlen: int = 0
         # // 创建客户端的时间
         self.ctime: int = 0
         # // 客户端最后一次和服务器互动的时间
@@ -641,7 +641,7 @@ def processCommand(c: RedisClient) -> int:
 
     c.cmd = c.lastcmd = lookupCommand(c.argv[0].ptr)
     if not c.cmd:
-        addReplyError(c, "unknown command '%s'" % c.argv[0].ptr)
+        addReplyError(c, "unknown command '%s'" % c.argv[0].ptr.text)
         return REDIS_OK
     elif c.cmd.arity > 0 and (c.cmd.arity != c.argc or c.argc < -c.cmd.arity):
         addReplyError(c, "wrong number of arguments for '%s' command" % c.cmd.name)
