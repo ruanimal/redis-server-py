@@ -1,6 +1,7 @@
 import locale
 from logging import NOTSET
 import random
+from sys import argv
 import time
 import logging
 import os
@@ -80,9 +81,20 @@ class clientBufferLimitsConfig:
         # 软限制时限
         self.soft_limit_seconds: int = 0
 
+@dataclass
+class redisOp:
+    argv: List[robj] = None
+    dbid: int = 0
+    target: int = 0
+
+    @property
+    def argc(self):
+        return len(self.argv)
+
+@dataclass
 class redisOpArray:
-    # TODO(ruan.lj@foxmail.com): something to do.
-    pass
+    ops: redisOp = redisOp()
+    numops: int = 0
 
 @dataclass
 class saveparam:
@@ -367,7 +379,7 @@ class RedisServer(Singleton):
 
         #  Propagation of commands in AOF / replication
         #  Additional command to propagate.
-        self.also_propagate: redisOpArray = None
+        self.also_propagate: redisOpArray = redisOpArray()
 
         #  Limits
         self.maxclients: int = 0
@@ -624,7 +636,17 @@ def freeMemoryIfNeeded() -> int:
     return REDIS_OK
 
 def call(c: RedisClient, flag: int):
-    pass
+    server = get_server()
+    client_old_flags = c.flags
+    c.flags &= ~(REDIS_FORCE_AOF|REDIS_FORCE_REPL)
+    dirty = server.dirty
+    start = timeval.from_datetime().ustime
+    c.cmd.proc(c)
+    duration = timeval.from_datetime().ustime - start
+    dirty = server.dirty - dirty
+    c.flags &= ~(REDIS_FORCE_AOF|REDIS_FORCE_REPL)
+    c.flags |= client_old_flags & (REDIS_FORCE_AOF|REDIS_FORCE_REPL)
+    server.stat_numcommands += 1
 
 def handleClientsBlockedOnLists():
     # TODO(rlj): something to do.
@@ -643,7 +665,7 @@ def processCommand(c: RedisClient) -> int:
     if not c.cmd:
         addReplyError(c, "unknown command '%s'" % c.argv[0].ptr.text)
         return REDIS_OK
-    elif c.cmd.arity > 0 and (c.cmd.arity != c.argc or c.argc < -c.cmd.arity):
+    elif (c.cmd.arity > 0 and (c.cmd.arity != c.argc)) or (c.argc < -c.cmd.arity):
         addReplyError(c, "wrong number of arguments for '%s' command" % c.cmd.name)
         return REDIS_OK
     if server.requirepass and (not c.authenticated) and c.cmd.proc != authCommand:
@@ -669,8 +691,11 @@ def processCommand(c: RedisClient) -> int:
             handleClientsBlockedOnLists()
     return REDIS_OK
 
-def selectDb(c: RedisClient, idx: int):
-    pass
+def selectDb(c: RedisClient, idx: int) -> int:
+    server = get_server()
+    if idx < 0 or idx > server.dbnum:
+        return REDIS_ERR
+    c.db = server.db[idx]
 
 def createClient(server: RedisServer, fd: Opt[socket.socket]) -> Opt[RedisClient]:
     c = RedisClient()
@@ -956,6 +981,7 @@ def listenToPort(server: RedisServer) -> int:
             s = anetTcp6Server(port, addr, backlog)
         else:
             s = anetTcpServer(port, addr, backlog)
+        server.ipfd.append(s)
         anetNonBlock(s)
     return REDIS_OK
 

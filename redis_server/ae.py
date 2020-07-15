@@ -233,7 +233,7 @@ def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
                 tv.tv_sec = tv.tv_usec = 0
             else:
                 tv = None
-    # import ipdb; ipdb.set_trace()
+
     numevents = aeApiPoll(eventLoop, tv)
     for j in range(numevents):
         fe = eventLoop.events[eventLoop.fired[j].fd]

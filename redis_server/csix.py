@@ -149,7 +149,11 @@ class timeval:
 
     @property
     def mstime(self):
-        return self.time // 1000
+        return self.time * 1000 + self.tv_usec // 1000
+
+    @property
+    def ustime(self):
+        return self.time * 1000000 + self.tv_usec
 
     @classmethod
     def from_datetime(cls, dt: datetime=None):

@@ -65,7 +65,6 @@ def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
 
     timeout = tvp.time
     _rfds, _wfds, _ = select.select(state.rfds, state.wfds, [], timeout)
-
     for fd in chain(_rfds, _wfds):
         assert fd <= eventLoop.maxfd
         mask = 0
