@@ -75,6 +75,10 @@ class SocketCache:
         assert sock.fileno() not in cls._cache
         cls._cache[sock.fileno()] = sock
 
+def zmalloc_used_memory() -> int:
+    # TODO(rlj): something to do.
+    return 0
+
 def get_server() -> 'RedisServer':
     from .redis import RedisServer
     return RedisServer()

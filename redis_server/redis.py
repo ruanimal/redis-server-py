@@ -1,4 +1,5 @@
 import locale
+from logging import NOTSET
 import random
 import time
 import logging
@@ -14,26 +15,26 @@ from io import BufferedWriter
 from collections import OrderedDict
 from itertools import chain
 
-from .csix import timeval, int2cstr
+from .csix import timeval, int2cstr, zfree
 from .ae import (
-    aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop, aeCreateEventLoop,
+    AE_WRITABLE, aeDeleteFileEvent, aeEventLoop, aeSetBeforeSleepProc, aeMain, aeDeleteEventLoop, aeCreateEventLoop,
     aeCreateTimeEvent, aeCreateFileEvent, AE_ERR, AE_READABLE,
 )
 from .anet import anetTcp6Server, anetTcpServer, anetNonBlock, anetUnixServer, anetEnableTcpNoDelay, anetKeepAlive
 from .config import ServerConfig as Conf
 from .config import *
 from .adlist import (
-    rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod,
+    listDelNode, listRelease, listSearchKey, rList, listCreate, listSetFreeMethod, listSetDupMethod, listSetMatchMethod,
     listLength,
 )
 from .rdict import *
-from .sds import sds, sdsempty, sdsnew
-from .robject import redisObject, decrRefCountVoid, createStringObject, createObject, REDIS_STRING, REDIS_ENCODING_INT
+from .sds import sds, sdsempty, sdsfree, sdsnew
+from .robject import *
 from .db import RedisDB, dbDictType, keyptrDictType, keylistDictType, setDictType, evictionPoolAlloc
 from .pubsub import freePubsubPattern, listMatchPubsubPattern
 from .aof import aofRewriteBufferReset
 from .networking import (
-    acceptTcpHandler, acceptUnixHandler, readQueryFromClient, dupClientReplyValue,
+    acceptTcpHandler, acceptUnixHandler, freeClientArgv, readQueryFromClient, dupClientReplyValue,
     listMatchObjects,
 )
 from .multi import initClientMultiState
@@ -616,7 +617,7 @@ def queueMultiCommand(c: 'RedisClient'):
 
 def lookupCommand(s: sds) -> Opt[redisCommand]:
     server = get_server()
-    return server.commands.get(sds.text)
+    return server.commands.get(s.text.lower())
 
 def freeMemoryIfNeeded() -> int:
     # TODO(rlj): something to do.
@@ -714,8 +715,43 @@ def createClient(server: RedisServer, fd: Opt[socket.socket]) -> Opt[RedisClient
     initClientMultiState(c)
     return c
 
-def freeClient(c: RedisClient):
+def unblockClient(c: RedisClient):
+    # TODO(rlj): something to do.
     pass
+
+def freeClientMultiState(c: RedisClient):
+    # TODO(rlj): something to do.
+    pass
+
+def freeClient(c: RedisClient):
+    server = get_server()
+    if server.current_client == c:
+        server.current_client = None
+    c.querybuf = None   # type: ignore
+    if c.flags & REDIS_BLOCKED:
+        unblockClient(c)
+    dictRelease(c.bpop.keys)
+    if c.fd:
+        aeDeleteFileEvent(server.el, c.fd.fileno(), AE_READABLE)
+        aeDeleteFileEvent(server.el, c.fd.fileno(), AE_WRITABLE)
+        c.fd.close()
+    listRelease(c.reply)
+    freeClientArgv(c)
+
+    if c.fd:
+        server.clients.remove(c)
+
+    if c.flags & REDIS_UNBLOCKED:
+        server.unblocked_clients.remove(c)
+    if c.flags & REDIS_CLOSE_ASAP:
+        server.clients_to_close.remove(c)
+    if c.name:
+        decrRefCount(c.name)
+    c.argv = []
+    c.peerid = ''
+    freeClientMultiState(c)
+    del c
+
 
 def populateCommandTable() -> None:
     flags_map = {

@@ -2,21 +2,22 @@ import socket
 import errno
 import typing
 from logging import getLogger
-from .ae import aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
+
+from .ae import aeDeleteFileEvent, aeEventLoop, aeCreateFileEvent, AE_WRITABLE, AE_ERR
 from .anet import anetTcpAccept
 from .robject import (
     redisObject, incrRefCount, equalStringObjects, createObject, createStringObject,
     decrRefCount, dupStringObject, sdsEncodedObject, getDecodedObject,
     REDIS_STRING, REDIS_ENCODING_RAW, REDIS_ENCODING_EMBSTR, REDIS_ENCODING_INT
 )
-from .util import SocketCache, get_server, ll2string, get_shared, string2ll
+from .util import *
 from .config import *
 from .sds import (
     sdsempty, sdslen, sdsMakeRoomFor, sdsIncrLen, sdsrange, sdsnewlen, sdssplitargs, sds,
     sdscatlen, sdsfree
 )
 from .csix import cstr, ULONG_MASK
-from .adlist import listLength, listAddNodeTail, listNodeValue, listLast, rList, listNode
+from .adlist import listDelNode, listFirst, listLength, listAddNodeTail, listNodeValue, listLast, rList, listNode
 
 if typing.TYPE_CHECKING:
     from .redis import RedisClient
@@ -63,9 +64,6 @@ def resetClient(c: 'RedisClient') -> None:
     if (not (c.flags & REDIS_MULTI) and prevcmd != askingCommand):
         c.flags &= (~REDIS_ASKING)
 
-def sendReplyToClient():
-    # TODO(rlj): something to do.
-    pass
 
 def freeClientAsync(c: 'RedisClient') -> None:
     if c.flags & REDIS_CLOSE_ASAP:
@@ -287,7 +285,7 @@ def processMultibulkBuffer(c: 'RedisClient'):
     if c.multibulklen == 0:
         assert c.argc == 0
         assert c.querybuf[0:1] == b'*'
-        newline = c.querybuf[0:c.querybuf.buf.find(b'\r\n')+1]
+        newline = c.querybuf[0:c.querybuf.buf.find(b'\r\n')]
         if not newline:
             if sdslen(c.querybuf) > REDIS_INLINE_MAX_SIZE:
                 addReplyError(c, "Protocol error: too big mbulk count string")
@@ -410,6 +408,59 @@ def readQueryFromClient(el: aeEventLoop, fd: int, privdata: 'RedisClient', mask:
         freeClient(c)
     processInputBuffer(c)
     server.current_client = None
+
+def sendReplyToClient(ae: aeEventLoop, fd: int, privdata: 'RedisClient', mask: int):
+    from .redis import freeClient
+
+    c = privdata
+    totwritten = 0
+    sock = SocketCache.get(fd)
+    server = get_server()
+    err = None
+    while c.bulklen > 0 or listLength(c.reply):
+        if c.bufpos > 0:
+            try:
+                sock.sendall(c.buf)
+            except OSError as e:
+                err = e
+                break
+            totwritten += len(c.buf)
+            c.sentlen += len(c.buf)
+            c.bufpos = 0
+            c.sentlen = 0
+        else:
+            o = listNodeValue(listFirst(c.reply))  # type: ignore
+            objlen = sdslen(o.ptr)
+            objmem = getStringObjectSdsUsedMemory(o)
+            if objlen == 0:
+                listDelNode(c.reply, listFirst(c.reply))  # type: ignore
+                c.reply_bytes -= objmem
+                continue
+            try:
+                sock.sendall(o.ptr.content)
+            except OSError as e:
+                err = e
+                break
+            totwritten += objlen
+            c.sentlen += objlen
+            if c.sentlen == objlen:
+                listDelNode(c.reply, listFirst(c.reply))  # type: ignore
+                c.sentlen = 0
+                c.reply_bytes -= objmem
+        if (totwritten > ServerConfig.REDIS_MAX_WRITE_PER_EVENT and
+            (server.maxmemory == 0 or zmalloc_used_memory() < server.maxmemory)):
+            break
+    if err and err.errno != errno.EAGAIN:
+        logger.info("Error writing to client: %s", err)
+        freeClient(c)
+    if totwritten > 0 and not (c.flags & REDIS_MASTER):
+        c.lastinteraction = server.unixtime
+    if c.bufpos == 0 and listLength(c.reply) == 0:
+        c.sentlen = 0
+        aeDeleteFileEvent(server.el, c.fd.fileno(), AE_WRITABLE)   # type: ignore
+        if c.flags & REDIS_CLOSE_AFTER_REPLY:
+            freeClient(c)
+
 
 def dupClientReplyValue(o: redisObject) -> redisObject:
     incrRefCount(o)
