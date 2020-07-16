@@ -49,7 +49,7 @@ class Sdshdr(object):
 sds = Sdshdr
 
 def sdsnewlen(init: cstr, initlen: int) -> sds:
-    buf = bytearray(init)
+    buf = bytearray(init[:initlen])
     buf.append(NUL)
     sh = sds(initlen, 0, buf)
     return sh
