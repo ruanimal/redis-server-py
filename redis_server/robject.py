@@ -1,8 +1,8 @@
 import typing
 from typing import List, Callable, Optional as Opt, Tuple, Union, ByteString
-from .sds import sdslen, sdsnewlen, sds, sdsfree, sdsavail, sdsRemoveFreeSpace
+from .sds import sdslen, sdsnewlen, sds, sdsfree, sdsavail, sdsRemoveFreeSpace, sdsnew
 from .util import ll2string, string2l, get_shared, get_server
-from .csix import ptr2long, strcoll, memcmp, cstr
+from .csix import ptr2long, strcoll, memcmp, cstr, int2cstr
 from .config import *
 
 if typing.TYPE_CHECKING:
@@ -36,14 +36,19 @@ class redisObject:
         self.refcount: int = 0
         self.ptr = None
 
+    @property
+    def int_value(self) -> int:
+        assert self.encoding == REDIS_ENCODING_INT
+        return self.ptr
+
 robj = redisObject
 
 
-def createObject(obj_type: int, ptr) -> robj:
+def createObject(obj_type: int, ptr, encoding: int = REDIS_ENCODING_RAW) -> robj:
     from .redis import LRUClock
     o = redisObject()
     o.type = obj_type
-    o.encoding = REDIS_ENCODING_RAW
+    o.encoding = encoding
     o.ptr = ptr
     o.refcount = 1
     o.lru = LRUClock()
