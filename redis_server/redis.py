@@ -614,8 +614,8 @@ class sharedObjects(Singleton):
         self.lpop: redisObject = createStringObject("LPOP", 4)
         self.lpush: redisObject = createStringObject("LPUSH", 5)
         # 常用整数
-        self.integers: List[redisObject] = [createObject(
-            REDIS_ENCODING_INT, sdsnew(int2cstr(i, 'int32'))) for i in range(Conf.REDIS_SHARED_INTEGERS)]
+        self.integers: List[redisObject] = [createObject(REDIS_STRING, sdsnew(int2cstr(i, 'int32')), REDIS_ENCODING_INT)
+                                            for i in range(Conf.REDIS_SHARED_INTEGERS)]
         # 常用长度 bulk 或者 multi bulk 回复
         self.mbulkhdr: List[redisObject] = [createObject(
             REDIS_STRING, sdsnew("*%d\r\n" % i)) for i in range(Conf.REDIS_SHARED_INTEGERS)]

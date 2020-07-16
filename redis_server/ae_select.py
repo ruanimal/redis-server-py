@@ -65,15 +65,17 @@ def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
 
     timeout = tvp.time
     _rfds, _wfds, _ = select.select(state.rfds, state.wfds, [], timeout)
-    for fd in chain(_rfds, _wfds):
-        assert fd <= eventLoop.maxfd
+    _rfds_set = set(_rfds)
+    _wfds_set = set(_wfds)
+    fd = 0
+    for fd in range(eventLoop.maxfd+1):
         mask = 0
         fe = eventLoop.events[fd]
         if fe.mask == AE_NONE:
             continue
-        if (fe.mask & AE_READABLE) and fd in _rfds:
+        if (fe.mask & AE_READABLE) and fd in _rfds_set:
             mask |= AE_READABLE
-        if (fe.mask & AE_WRITABLE) and fd in _wfds:
+        if (fe.mask & AE_WRITABLE) and fd in _wfds_set:
             mask |= AE_WRITABLE
         eventLoop.fired[numevents].fd = fd
         eventLoop.fired[numevents].mask = mask
