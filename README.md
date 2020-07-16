@@ -4,7 +4,7 @@ redis server python edition, for learning redis.
 ## requirements
 require python3.7+
 
-`pip install -r requirements.txt`
+install requirements: `pip install -r requirements.txt`
 
 ## usage
 `python -m redis_server --port 5678`
