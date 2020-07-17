@@ -12,7 +12,7 @@ import logging
 import select
 import typing
 import socket
-from typing import Optional as Opt, List, Union
+from typing import Optional as Opt, List, Union, Set
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,8 @@ if typing.TYPE_CHECKING:
 
 class aeApiState:
     def __init__(self):
-        self.rfds: List[int] = []
-        self.wfds: List[int] = []
+        self.rfds: Set[int] = set()
+        self.wfds: Set[int] = set()
         # self._rfds: List[int] = []
         # self._wfds: List[int] = []
 
@@ -42,18 +42,18 @@ def aeApiAddEvent(eventLoop: 'aeEventLoop', fd: int, mask: int) -> int:
     from .ae import AE_READABLE, AE_WRITABLE
     state: aeApiState = eventLoop.apidata
     if mask & AE_READABLE:
-        state.rfds.append(fd)
+        state.rfds.add(fd)
     if mask & AE_WRITABLE:
-        state.wfds.append(fd)
+        state.wfds.add(fd)
     return 0
 
 def aeApiDelEvent(eventLoop: 'aeEventLoop', fd: int, mask: int) -> None:
     from .ae import AE_READABLE, AE_WRITABLE
     state: aeApiState = eventLoop.apidata
-    if mask & AE_READABLE:
-        list_remove(state.rfds, fd)
-    if mask & AE_WRITABLE:
-        list_remove(state.wfds, fd)
+    if mask & AE_READABLE and fd in state.rfds:
+        state.rfds.remove(fd)
+    if mask & AE_WRITABLE and fd in state.wfds:
+        state.wfds.remove(fd)
 
 def aeApiPoll(eventLoop: 'aeEventLoop', tvp: Opt['timeval']) -> int:
     from itertools import chain

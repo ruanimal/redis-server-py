@@ -2,3 +2,4 @@ fixedint
 pylint
 mypy
 pytest-mypy
+redis
