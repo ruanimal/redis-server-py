@@ -318,7 +318,7 @@ def dictReplace(d: rDict, key, val) -> int:
 
     entry = dictFind(d, key)
     # auxentry = * entry
-    dictSetVal(d, key, val)
+    dictSetVal(d, entry, val)
     # NOTE no dictFreeVal(&auxentry) in python
     return 0
 
