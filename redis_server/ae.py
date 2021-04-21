@@ -233,7 +233,7 @@ def aeProcessEvents(eventLoop: aeEventLoop, flags: int):
                 tv.tv_sec = tv.tv_usec = 0
             else:
                 tv = None
-
+    # Poll, 直到最近的时间时间发生, 如果没有时间事件, 则一直阻塞
     numevents = aeApiPoll(eventLoop, tv)
     for j in range(numevents):
         fe = eventLoop.events[eventLoop.fired[j].fd]

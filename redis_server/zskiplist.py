@@ -74,20 +74,23 @@ def _node_lt(node: zskiplistNode, score: float, obj: robj):
 
 def zslInsert(zsl: zskiplist, score: float, obj: robj) -> zskiplistNode:
     assert not isnan(score)
+    # update list记录的是每一层, 新节点需要插入的位置(新节点x的backward节点指针)
     update: List[Opt[zskiplistNode]] = [None for _ in range(ZSKIPLIST_MAXLEVEL)]
-    # rank[i]: 到第i层为止经过的所有node的span总和
+    # rank[i]: 从高到低, 到第i层为止经过的所有node的span总和, 也就是节点的排序
+    # 用于计算新节点各层的span, 以及新节点的后继节点各层的span
     rank = [0 for _ in range(ZSKIPLIST_MAXLEVEL)]
     x = zsl.header
     # 从高层开始遍历
     for i in range(zsl.level-1, -1, -1):
         rank[i] = 0 if i == zsl.level-1 else rank[i+1]
+        # 找到每一层x需要插入的位置, 并更新rank
         while x.level[i].forward and _node_lt(x.level[i].forward, score, obj):
             rank[i] += x.level[i].span
             x = x.level[i].forward
-        # 每一层, 小于新Node的最大Node, 新节点会插入到update[i].level[i]之后
+        # 对于每一层i, 新节点会插入到update[i].level[i]之后
         update[i] = x
 
-    level = zslRandomLevel()
+    level = zslRandomLevel()  # 取一个随机层数, 使zskiplist更为均衡
     if level > zsl.level:
         # 从头部扩展level, 新level的跨度等于跳表长度
         for i in range(zsl.level, level):
