@@ -119,7 +119,7 @@ def compareStringObjectsWithFlags(a: 'robj', b: 'robj', flags: int) -> int:
         return strcoll(astr, bstr)
     else:
         minlen = min(alen, blen)
-        cmp = memcmp(astr, bstr, minlen)
+        cmp = memcmp(astr.content, bstr.content, minlen)
         if cmp == 0:
             return alen - blen
         return cmp

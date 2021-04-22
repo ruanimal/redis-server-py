@@ -849,6 +849,8 @@ def getLRUClock() -> int:
 
 def LRUClock() -> int:
     server = RedisServer()
+    if not server.loading:
+        return getLRUClock()
     return (1000/server.hz <= REDIS_LRU_CLOCK_RESOLUTION) and server.lruclock or getLRUClock()
 
 def initServerConfig(server: RedisServer):
@@ -1250,25 +1252,25 @@ def daemonize():
         os.close(fd)
 
 def redisAsciiArt(server: RedisServer) -> None:
-    art = (
-        "                _._ \n"
-        "           _.-``__ ''-._ \n"
-        "      _.-``    `.  `_.  ''-._           Redis {ver} (00000000/0) 64 bit \n"
-        "  .-`` .-```.  ```\/    _.,_ ''-._ \n"
-        " (    '      ,       .-`  | `,    )     Running in {mode} mode \n"
-        " |`-._`-...-` __...-.``-._|'` _.-'|     Port: {port} \n"
-        " |    `-._   `._    /     _.-'    |     PID: {pid} \n"
-        "  `-._    `-._  `-./  _.-'    _.-' \n"
-        " |`-._`-._    `-.__.-'    _.-'_.-'| \n"
-        " |    `-._`-._        _.-'_.-'    |           http://redis.io \n"
-        "  `-._    `-._`-.__.-'_.-'    _.-' \n"
-        " |`-._`-._    `-.__.-'    _.-'_.-'| \n"
-        " |    `-._`-._        _.-'_.-'    | \n"
-        "  `-._    `-._`-.__.-'_.-'    _.-' \n"
-        "      `-._    `-.__.-'    _.-' \n"
-        "          `-._        _.-' \n"
-        "              `-.__.-' \n"
-    )
+    art = r'''
+                        _._
+                   _.-``__ ''-._
+              _.-``    `.  `_.  ''-._           Redis {ver} (00000000/0) 64 bit
+          .-`` .-```.  ```\/    _.,_ ''-._
+         (    '      ,       .-`  | `,    )     Running in {mode} mode
+         |`-._`-...-` __...-.``-._|'` _.-'|     Port: {port}
+         |    `-._   `._    /     _.-'    |     PID: {pid}
+          `-._    `-._  `-./  _.-'    _.-'
+         |`-._`-._    `-.__.-'    _.-'_.-'|
+         |    `-._`-._        _.-'_.-'    |           http://redis.io
+          `-._    `-._`-.__.-'_.-'    _.-'
+         |`-._`-._    `-.__.-'    _.-'_.-'|
+         |    `-._`-._        _.-'_.-'    |
+          `-._    `-._`-.__.-'_.-'    _.-'
+              `-._    `-.__.-'    _.-'
+                  `-._        _.-'
+                      `-.__.-'
+    '''
     if server.cluster_enabled:
         mode = "cluster"
     elif server.sentinel_mode:

@@ -1,5 +1,7 @@
 fixedint
 pylint
+redis
 mypy
 pytest-mypy
-redis
+pytest-pylint
+pytest==5.4.3
